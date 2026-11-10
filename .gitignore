@@ -1,0 +1,7 @@
+/target
+/.vscode
+# Reference clones (Horizon, IWM); IWM holds Mojang's server.jar, which must never be committed.
+/external
+# Downloaded tools and Mojang files (JDK, server.jar, generated game data).
+/.local
+/game-data
