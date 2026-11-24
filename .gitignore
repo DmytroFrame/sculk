@@ -1,7 +1,6 @@
 /target
 /.vscode
-# Horizon checkout (tools/horizon.sh setup; our changes live in patches/horizon) and IWM; IWM holds Mojang's server.jar, which must never be committed.
-/external
+# external/ holds git submodules (Horizon, IWM) and external/rustfmt.toml: see .gitmodules and tools/horizon.sh.
 # Downloaded tools and Mojang files (JDK, server.jar, generated game data).
 /.local
 /game-data

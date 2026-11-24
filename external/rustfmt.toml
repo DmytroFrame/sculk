@@ -1,0 +1,1 @@
+# Horizon is formatted with rustfmt defaults; this keeps Sculk's rustfmt.toml (one folder up) from reformatting it.

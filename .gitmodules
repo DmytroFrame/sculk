@@ -1,0 +1,13 @@
+# Horizon: the game engine Sculk runs (MIT). The submodule stays at upstream's commit in patches/horizon/BASE;
+# tools/horizon.sh setup applies Sculk's patches (patches/horizon/*.patch) on a `sculk` branch.
+[submodule "external/horizon"]
+	path = external/horizon
+	url = https://github.com/horizon-rust/horizon.git
+	# The checkout sits on `sculk` (BASE plus the patches): never record that commit, which exists only here.
+	ignore = all
+# IWM: Sculk's 2023 prototype, for reference. Its repository holds Mojang's server.jar, so it is not checked out by
+# default (`git submodule update --init --checkout external/iwm` to get it).
+[submodule "external/iwm"]
+	path = external/iwm
+	url = https://github.com/DmytroFrame/iwm
+	update = none
