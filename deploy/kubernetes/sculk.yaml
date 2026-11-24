@@ -1,0 +1,298 @@
+# Sculk on Kubernetes: AnvilDB (the world), IO (the players' entry point) and workers running the vanilla game
+# (Horizon's engine). See README.md beside this file for what to fill in before `kubectl apply -k`.
+#
+#   players ──► Service sculk (LoadBalancer, 25565 TCP + UDP) ──► io ──► workers (pod IPs, port 25601)
+#                                                                  │          │
+#                                                                  └─► anvildb ◄┘   (PersistentVolume: the world)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sculk
+---
+# The cluster's settings, the same for every pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sculk-settings
+  namespace: sculk
+data:
+  # true: you accept Minecraft's EULA (https://aka.ms/MinecraftEULA) for the engines. Nothing starts without it.
+  SCULK_EULA: "false"
+  SCULK_ONLINE_MODE: "true"
+  SCULK_MOTD: "A Minecraft Server"
+  SCULK_MAX_PLAYERS: "10000"
+  SCULK_WORLD: world
+  SCULK_SEED: sculk
+  SCULK_VIEW_DISTANCE: "10"
+  SCULK_PLACEMENT: spread
+  SCULK_REGION_COMPRESSION: lz4
+  SCULK_ARCHIVE_AFTER_DAYS: "30"
+  RUST_LOG: info
+---
+# The game's rules for every engine (vanilla's server.properties keys), and anything else of config/:
+# server-icon.png, ops.json, whitelist.json... (add them as keys; binary ones under binaryData).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sculk-config
+  namespace: sculk
+data:
+  server.properties: |
+    gamemode=survival
+    difficulty=easy
+    pvp=true
+    hardcore=false
+    spawn-protection=16
+    allow-flight=false
+    white-list=false
+    view-distance=10
+    simulation-distance=10
+---
+# Horizon's prepared Minecraft 26.3 resources (horizon-prepare's output, ~700 MB), read by every worker.
+# Fill it once (README.md); ReadWriteMany so it can be filled and then shared by workers on any node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: horizon-resources
+  namespace: sculk
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 2Gi
+---
+# ── AnvilDB: the world ─────────────────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: anvildb
+  namespace: sculk
+spec:
+  serviceName: anvildb
+  replicas: 1
+  selector:
+    matchLabels: { app: anvildb }
+  template:
+    metadata:
+      labels: { app: anvildb }
+    spec:
+      securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      containers:
+        - name: anvildb
+          image: sculk:latest
+          imagePullPolicy: IfNotPresent
+          args: ["anvildb"]
+          envFrom:
+            - configMapRef: { name: sculk-settings }
+            # SCULK_ARCHIVE_S3, SCULK_S3_ACCESS_KEY, SCULK_S3_SECRET_KEY, SCULK_S3_REGION to archive cold regions in S3.
+            - secretRef: { name: sculk-s3, optional: true }
+          env:
+            - { name: SCULK_ANVILDB_LISTEN, value: "0.0.0.0:7200" }
+            - { name: SCULK_ANVILDB_DATA, value: /data/anvildb }
+          ports:
+            - { name: grpc, containerPort: 7200 }
+          readinessProbe:
+            tcpSocket: { port: grpc }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          volumeMounts:
+            - { name: world, mountPath: /data/anvildb }
+  volumeClaimTemplates:
+    - metadata:
+        name: world
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anvildb
+  namespace: sculk
+spec:
+  selector: { app: anvildb }
+  ports:
+    - { name: grpc, port: 7200 }
+---
+# ── IO: the players' entry point (one per cluster) ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: io
+  namespace: sculk
+spec:
+  replicas: 1
+  # One IO at a time: it holds the players' connections and the cluster's routes.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: io }
+  template:
+    metadata:
+      labels: { app: io }
+    spec:
+      securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      initContainers:
+        # Minecraft 26.3's registries and tags from Mojang's server.jar (downloaded, SHA-1 checked).
+        - name: prepare
+          image: sculk:latest
+          imagePullPolicy: IfNotPresent
+          args: ["prepare", "--if-missing", "--out", "/data/game-data"]
+          volumeMounts:
+            - { name: game-data, mountPath: /data/game-data }
+      containers:
+        - name: io
+          image: sculk:latest
+          imagePullPolicy: IfNotPresent
+          args: ["io"]
+          envFrom:
+            - configMapRef: { name: sculk-settings }
+          env:
+            - { name: SCULK_LISTEN, value: "0.0.0.0:25565" }
+            - { name: SCULK_TUNNEL_LISTEN, value: "0.0.0.0:25565" }
+            - { name: SCULK_IO_CONTROL_LISTEN, value: "0.0.0.0:7100" }
+            - { name: SCULK_CONSOLE_LISTEN, value: "0.0.0.0:7180" }
+            - { name: SCULK_ANVILDB, value: "http://anvildb:7200" }
+            - { name: SCULK_ICON, value: /config/server-icon.png }
+            - { name: SCULK_GAME_DATA, value: /data/game-data }
+          ports:
+            - { name: minecraft, containerPort: 25565, protocol: TCP }
+            - { name: tunnel, containerPort: 25565, protocol: UDP }
+            - { name: control, containerPort: 7100 }
+            - { name: console, containerPort: 7180 }
+          readinessProbe:
+            tcpSocket: { port: control }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "1", memory: 512Mi }
+            limits: { memory: 2Gi }
+          volumeMounts:
+            - { name: game-data, mountPath: /data/game-data }
+            - { name: config, mountPath: /config, readOnly: true }
+      volumes:
+        - { name: game-data, emptyDir: {} }
+        - { name: config, configMap: { name: sculk-config } }
+---
+# What players connect to: the game over TCP, Nether Tunnel over UDP on the same port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sculk
+  namespace: sculk
+spec:
+  type: LoadBalancer
+  selector: { app: io }
+  # Players' real addresses reach IO (bans by IP, the log).
+  externalTrafficPolicy: Local
+  ports:
+    - { name: minecraft, port: 25565, targetPort: minecraft, protocol: TCP }
+    - { name: tunnel, port: 25565, targetPort: tunnel, protocol: UDP }
+---
+# Inside the cluster only: workers register here; the web console is reached with `kubectl port-forward`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: io
+  namespace: sculk
+spec:
+  selector: { app: io }
+  ports:
+    - { name: control, port: 7100 }
+    - { name: console, port: 7180 }
+---
+# ── Workers: each one runs a game engine, a micro world of its own ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: sculk
+spec:
+  # The autoscaler below sets the count once it runs; 4 to begin with.
+  replicas: 4
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+    spec:
+      securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }
+      # A stopping worker hands its players to the other engines, then its engine saves the world.
+      terminationGracePeriodSeconds: 120
+      initContainers:
+        - name: prepare
+          image: sculk:latest
+          imagePullPolicy: IfNotPresent
+          args: ["prepare", "--if-missing", "--out", "/data/game-data"]
+          volumeMounts:
+            - { name: game-data, mountPath: /data/game-data }
+      containers:
+        - name: worker
+          image: sculk:latest
+          imagePullPolicy: IfNotPresent
+          args: ["worker"]
+          envFrom:
+            - configMapRef: { name: sculk-settings }
+          env:
+            - { name: SCULK_IO, value: "http://io:7100" }
+            - { name: SCULK_ANVILDB, value: "http://anvildb:7200" }
+            - { name: SCULK_GAME_DATA, value: /data/game-data }
+            - { name: SCULK_ENGINE, value: /usr/local/bin/sculk-engine }
+            - { name: SCULK_RESOURCES, value: /resources }
+            - { name: SCULK_ENGINE_DIR, value: /data/engine }
+            # IO reaches the engine at this pod's IP.
+            - { name: SCULK_ENGINE_BIND, value: "0.0.0.0" }
+            - { name: SCULK_ENGINE_PORT, value: "25601" }
+            - { name: SCULK_PROPERTIES, value: /config/server.properties }
+          ports:
+            - { name: engine, containerPort: 25601 }
+          resources:
+            requests: { cpu: "2", memory: 2Gi }
+            limits: { memory: 6Gi }
+          volumeMounts:
+            - { name: game-data, mountPath: /data/game-data }
+            - { name: engine, mountPath: /data/engine }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: horizon-resources, mountPath: /resources, readOnly: true }
+      volumes:
+        - { name: game-data, emptyDir: {} }
+        # The engine's folder: its world files come from AnvilDB at start, nothing here needs to persist.
+        - { name: engine, emptyDir: {} }
+        - { name: config, configMap: { name: sculk-config } }
+        - { name: horizon-resources, persistentVolumeClaim: { claimName: horizon-resources, readOnly: true } }
+---
+# Workers scale with their load: an engine's tick time follows its CPU. More workers take new players and the micro
+# worlds that split off busy engines; fewer, one at a time and slowly, since each leaving worker first hands its
+# players to the others (drain), so nobody is disconnected. Needs metrics-server in the cluster.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: sculk
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+  minReplicas: 2
+  maxReplicas: 16
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - { type: Pods, value: 2, periodSeconds: 60 }
+    scaleDown:
+      # A quiet hour at night should not shuffle players around: wait 10 minutes, then remove one worker per 5.
+      stabilizationWindowSeconds: 600
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 300 }

@@ -1,0 +1,10 @@
+# kubectl apply -k deploy/kubernetes   (README.md: what to set first)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - sculk.yaml
+# The image every pod runs: push yours (tools/docker.sh build, then docker push) and name it here.
+images:
+  - name: sculk
+    newName: sculk
+    newTag: latest
