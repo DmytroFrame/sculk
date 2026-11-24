@@ -1,0 +1,559 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dimakostishen@gmail.com>
+Date: Tue, 10 Nov 2026 14:38:55 +0100
+Subject: [PATCH] Velocity forwarding codec in horizon-protocol, with the
+ proxy's side
+
+The codec moves from the client's lan/forwarding.rs (which re-exports it) to
+horizon-protocol, so a proxy can build the answer without the game: `sign`
+writes what `verify` reads. Signing the recorded Velocity 4.3.1 answer gives
+its exact bytes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2ieq7GzmXY5PzZCML5
+---
+ crates/horizon-client/src/lan/forwarding.rs | 233 +---------------
+ crates/horizon-protocol/src/forwarding.rs   | 280 ++++++++++++++++++++
+ crates/horizon-protocol/src/lib.rs          |   1 +
+ 3 files changed, 283 insertions(+), 231 deletions(-)
+ create mode 100644 crates/horizon-protocol/src/forwarding.rs
+
+diff --git a/crates/horizon-client/src/lan/forwarding.rs b/crates/horizon-client/src/lan/forwarding.rs
+index 346b15935f..e8eac3e1db 100644
+--- a/crates/horizon-client/src/lan/forwarding.rs
++++ b/crates/horizon-client/src/lan/forwarding.rs
+@@ -1,231 +1,2 @@
+-//! Velocity "modern" player information forwarding for a dedicated server behind a proxy.
+-//!
+-//! The proxy authenticates the player and the server (`online-mode=false`) trusts what it forwards. Written
+-//! from the behaviour of a real Velocity 4.3.1, not from any other project's source: the exchange was recorded
+-//! with a stand-in backend and is described in docs/velocity-forwarding.md.
+-//!
+-//! The server asks on [`CHANNEL`] with one byte, the highest forwarding version it understands. The proxy
+-//! answers with a 32-byte HMAC-SHA256 signature followed by the signed data, made with the secret both sides
+-//! share: `version` (VarInt), the player's `address` (string), `uuid` (16 bytes), `name` (string) and the
+-//! profile `properties` (VarInt count; each a name, a value, a bool and the signature string when it is set).
+-
+-use horizon_protocol::{buf::Reader, packets::login};
+-use sha2::{Digest, Sha256};
+-use std::net::IpAddr;
+-
+-/// The login plugin channel the proxy answers on.
+-pub const CHANNEL: &str = "velocity:player_info";
+-
+-/// The version asked for and the only one accepted: address, UUID, name and properties.
+-const VERSION: u8 = 1;
+-
+-/// What the proxy vouches for.
+-#[derive(Debug, PartialEq)]
+-pub struct Forwarded {
+-    pub address: IpAddr,
+-    pub uuid: u128,
+-    pub name: String,
+-    pub properties: Vec<login::Property>,
+-}
+-
+-/// The request's data: the highest version this server reads.
+-pub fn request() -> Vec<u8> {
+-    vec![VERSION]
+-}
+-
+-/// Checks the proxy's answer against the shared `secret` and reads what it forwards.
+-pub fn verify(secret: &[u8], payload: &[u8]) -> Result<Forwarded, String> {
+-    if payload.len() < 32 {
+-        return Err("the forwarded data is too short".into());
+-    }
+-    let (signature, data) = payload.split_at(32);
+-    if !equal(&hmac_sha256(secret, data), signature) {
+-        return Err("the forwarded data is not signed with this server's secret".into());
+-    }
+-    let bad = |e: horizon_protocol::Error| format!("the forwarded data is damaged: {e}");
+-    let mut r = Reader::new(data);
+-    let version = r.varint().map_err(bad)?;
+-    if version != i32::from(VERSION) {
+-        return Err(format!(
+-            "the proxy forwarded version {version}, not {VERSION}"
+-        ));
+-    }
+-    let address = r.string(64).map_err(bad)?;
+-    let address: IpAddr = address
+-        .parse()
+-        .map_err(|_| format!("the forwarded address {address:?} is not an IP address"))?;
+-    let uuid = r.uuid().map_err(bad)?;
+-    let name = r.string(16).map_err(bad)?;
+-    let count = r.count(64).map_err(bad)?;
+-    let mut properties = Vec::with_capacity(count);
+-    for _ in 0..count {
+-        let name = r.string(64).map_err(bad)?;
+-        let value = r.string(32767).map_err(bad)?;
+-        let signature = if r.bool().map_err(bad)? {
+-            Some(r.string(1024).map_err(bad)?)
+-        } else {
+-            None
+-        };
+-        properties.push(login::Property {
+-            name,
+-            value,
+-            signature,
+-        });
+-    }
+-    if r.remaining() != 0 {
+-        return Err("the forwarded data has trailing bytes".into());
+-    }
+-    Ok(Forwarded {
+-        address,
+-        uuid,
+-        name,
+-        properties,
+-    })
+-}
+-
+-/// HMAC-SHA256 (RFC 2104).
+-fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+-    const BLOCK: usize = 64;
+-    let mut padded = [0u8; BLOCK];
+-    if key.len() > BLOCK {
+-        padded[..32].copy_from_slice(&Sha256::digest(key));
+-    } else {
+-        padded[..key.len()].copy_from_slice(key);
+-    }
+-    let inner = Sha256::new()
+-        .chain_update(padded.map(|b| b ^ 0x36))
+-        .chain_update(data)
+-        .finalize();
+-    Sha256::new()
+-        .chain_update(padded.map(|b| b ^ 0x5c))
+-        .chain_update(inner)
+-        .finalize()
+-        .into()
+-}
+-
+-/// Compares without stopping at the first difference, so the time says nothing about the signature.
+-fn equal(a: &[u8], b: &[u8]) -> bool {
+-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    use horizon_protocol::buf::Writer;
+-
+-    fn hex(s: &str) -> Vec<u8> {
+-        (0..s.len())
+-            .step_by(2)
+-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+-            .collect()
+-    }
+-
+-    #[test]
+-    fn hmac_matches_the_rfc_4231_vectors() {
+-        assert_eq!(
+-            hmac_sha256(&[0x0b; 20], b"Hi There").to_vec(),
+-            hex("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+-        );
+-        assert_eq!(
+-            hmac_sha256(b"Jefe", b"what do ya want for nothing?").to_vec(),
+-            hex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+-        );
+-        // A key longer than the block is hashed first (RFC 4231 test case 6).
+-        assert_eq!(
+-            hmac_sha256(
+-                &[0xaa; 131],
+-                b"Test Using Larger Than Block-Size Key - Hash Key First"
+-            )
+-            .to_vec(),
+-            hex("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+-        );
+-    }
+-
+-    /// What a Velocity 4.3.1 proxy answered to `request()` for a player named Tester, recorded with a
+-    /// stand-in backend and the throwaway secret below.
+-    const SECRET: &[u8] = b"ISWncFxltwFE";
+-    const RECORDED: &str = "189e73f57e7fe3d387de5f252fc0226e8288e5b15f23ee12924b34cf216b7f6901093132372e302e302e31f3d28cb072253cb1baeb2dadd2be89ae0654657374657200";
+-
+-    #[test]
+-    fn a_recorded_answer_is_read() {
+-        let got = verify(SECRET, &hex(RECORDED)).unwrap();
+-        assert_eq!(got.address, "127.0.0.1".parse::<IpAddr>().unwrap());
+-        assert_eq!(got.uuid, 0xf3d28cb0_7225_3cb1_baeb_2dadd2be89ae);
+-        assert_eq!(got.name, "Tester");
+-        assert!(got.properties.is_empty());
+-    }
+-
+-    #[test]
+-    fn another_secret_or_a_changed_byte_is_refused() {
+-        let mut payload = hex(RECORDED);
+-        assert!(verify(b"not the secret", &payload).is_err());
+-        *payload.last_mut().unwrap() ^= 1;
+-        assert!(verify(SECRET, &payload).unwrap_err().contains("not signed"));
+-        assert!(verify(SECRET, &payload[..10]).is_err());
+-    }
+-
+-    /// Signs `data` the way the proxy does, for the cases the recording doesn't cover.
+-    fn signed(data: &Writer) -> Vec<u8> {
+-        let mut out = hmac_sha256(SECRET, &data.data).to_vec();
+-        out.extend_from_slice(&data.data);
+-        out
+-    }
+-
+-    fn body(
+-        version: i32,
+-        address: &str,
+-        name: &str,
+-        properties: &[(&str, &str, Option<&str>)],
+-    ) -> Writer {
+-        let mut w = Writer::new();
+-        w.varint(version);
+-        w.string(address);
+-        w.uuid(7);
+-        w.string(name);
+-        w.varint(properties.len() as i32);
+-        for (key, value, signature) in properties {
+-            w.string(key);
+-            w.string(value);
+-            w.bool(signature.is_some());
+-            if let Some(signature) = signature {
+-                w.string(signature);
+-            }
+-        }
+-        w
+-    }
+-
+-    #[test]
+-    fn properties_are_read_with_and_without_a_signature() {
+-        let w = body(
+-            1,
+-            "::1",
+-            "Alex",
+-            &[("textures", "abc", Some("sig")), ("extra", "x", None)],
+-        );
+-        let got = verify(SECRET, &signed(&w)).unwrap();
+-        assert_eq!(got.address, "::1".parse::<IpAddr>().unwrap());
+-        assert_eq!(got.properties.len(), 2);
+-        assert_eq!(got.properties[0].signature.as_deref(), Some("sig"));
+-        assert_eq!(got.properties[1].signature, None);
+-    }
+-
+-    #[test]
+-    fn other_versions_and_bad_data_are_refused() {
+-        assert!(verify(SECRET, &signed(&body(4, "127.0.0.1", "A", &[]))).is_err());
+-        assert!(verify(SECRET, &signed(&body(1, "localhost", "A", &[]))).is_err());
+-        assert!(
+-            verify(
+-                SECRET,
+-                &signed(&body(1, "127.0.0.1", "much too long a name", &[]))
+-            )
+-            .is_err()
+-        );
+-        let mut w = body(1, "127.0.0.1", "A", &[]);
+-        w.u8(0);
+-        assert!(
+-            verify(SECRET, &signed(&w))
+-                .unwrap_err()
+-                .contains("trailing")
+-        );
+-    }
+-}
++//! Velocity player information forwarding: the codec lives in `horizon-protocol`, where a proxy can use it too.
++pub use horizon_protocol::forwarding::*;
+diff --git a/crates/horizon-protocol/src/forwarding.rs b/crates/horizon-protocol/src/forwarding.rs
+new file mode 100644
+index 0000000000..5f38506a87
+--- /dev/null
++++ b/crates/horizon-protocol/src/forwarding.rs
+@@ -0,0 +1,280 @@
++//! Velocity "modern" player information forwarding, both sides: a dedicated server behind a proxy reads it
++//! ([`verify`]), a proxy builds it ([`sign`]).
++//!
++//! The proxy authenticates the player and the server (`online-mode=false`) trusts what it forwards. Written
++//! from the behaviour of a real Velocity 4.3.1, not from any other project's source: the exchange was recorded
++//! with a stand-in backend and is described in docs/velocity-forwarding.md.
++//!
++//! The server asks on [`CHANNEL`] with one byte, the highest forwarding version it understands. The proxy
++//! answers with a 32-byte HMAC-SHA256 signature followed by the signed data, made with the secret both sides
++//! share: `version` (VarInt), the player's `address` (string), `uuid` (16 bytes), `name` (string) and the
++//! profile `properties` (VarInt count; each a name, a value, a bool and the signature string when it is set).
++
++use crate::{
++    buf::{Reader, Writer},
++    packets::login,
++};
++use sha2::{Digest, Sha256};
++use std::net::IpAddr;
++
++/// The login plugin channel the proxy answers on.
++pub const CHANNEL: &str = "velocity:player_info";
++
++/// The version asked for and the only one accepted: address, UUID, name and properties.
++const VERSION: u8 = 1;
++
++/// What the proxy vouches for.
++#[derive(Debug, PartialEq)]
++pub struct Forwarded {
++    pub address: IpAddr,
++    pub uuid: u128,
++    pub name: String,
++    pub properties: Vec<login::Property>,
++}
++
++/// The request's data: the highest version this server reads.
++pub fn request() -> Vec<u8> {
++    vec![VERSION]
++}
++
++/// Checks the proxy's answer against the shared `secret` and reads what it forwards.
++pub fn verify(secret: &[u8], payload: &[u8]) -> Result<Forwarded, String> {
++    if payload.len() < 32 {
++        return Err("the forwarded data is too short".into());
++    }
++    let (signature, data) = payload.split_at(32);
++    if !equal(&hmac_sha256(secret, data), signature) {
++        return Err("the forwarded data is not signed with this server's secret".into());
++    }
++    let bad = |e: crate::Error| format!("the forwarded data is damaged: {e}");
++    let mut r = Reader::new(data);
++    let version = r.varint().map_err(bad)?;
++    if version != i32::from(VERSION) {
++        return Err(format!(
++            "the proxy forwarded version {version}, not {VERSION}"
++        ));
++    }
++    let address = r.string(64).map_err(bad)?;
++    let address: IpAddr = address
++        .parse()
++        .map_err(|_| format!("the forwarded address {address:?} is not an IP address"))?;
++    let uuid = r.uuid().map_err(bad)?;
++    let name = r.string(16).map_err(bad)?;
++    let count = r.count(64).map_err(bad)?;
++    let mut properties = Vec::with_capacity(count);
++    for _ in 0..count {
++        let name = r.string(64).map_err(bad)?;
++        let value = r.string(32767).map_err(bad)?;
++        let signature = if r.bool().map_err(bad)? {
++            Some(r.string(1024).map_err(bad)?)
++        } else {
++            None
++        };
++        properties.push(login::Property {
++            name,
++            value,
++            signature,
++        });
++    }
++    if r.remaining() != 0 {
++        return Err("the forwarded data has trailing bytes".into());
++    }
++    Ok(Forwarded {
++        address,
++        uuid,
++        name,
++        properties,
++    })
++}
++
++/// The proxy's answer to the server's request: `forwarded` signed with the shared `secret`.
++pub fn sign(secret: &[u8], forwarded: &Forwarded) -> Vec<u8> {
++    let mut w = Writer::new();
++    w.varint(i32::from(VERSION));
++    w.string(&forwarded.address.to_string());
++    w.uuid(forwarded.uuid);
++    w.string(&forwarded.name);
++    w.varint(forwarded.properties.len() as i32);
++    for p in &forwarded.properties {
++        w.string(&p.name);
++        w.string(&p.value);
++        w.bool(p.signature.is_some());
++        if let Some(signature) = &p.signature {
++            w.string(signature);
++        }
++    }
++    let mut out = hmac_sha256(secret, &w.data).to_vec();
++    out.extend_from_slice(&w.data);
++    out
++}
++
++/// HMAC-SHA256 (RFC 2104).
++fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
++    const BLOCK: usize = 64;
++    let mut padded = [0u8; BLOCK];
++    if key.len() > BLOCK {
++        padded[..32].copy_from_slice(&Sha256::digest(key));
++    } else {
++        padded[..key.len()].copy_from_slice(key);
++    }
++    let inner = Sha256::new()
++        .chain_update(padded.map(|b| b ^ 0x36))
++        .chain_update(data)
++        .finalize();
++    Sha256::new()
++        .chain_update(padded.map(|b| b ^ 0x5c))
++        .chain_update(inner)
++        .finalize()
++        .into()
++}
++
++/// Compares without stopping at the first difference, so the time says nothing about the signature.
++fn equal(a: &[u8], b: &[u8]) -> bool {
++    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn hex(s: &str) -> Vec<u8> {
++        (0..s.len())
++            .step_by(2)
++            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
++            .collect()
++    }
++
++    #[test]
++    fn what_a_proxy_signs_the_server_reads() {
++        let forwarded = Forwarded {
++            address: "203.0.113.7".parse().unwrap(),
++            uuid: 0x0123_4567_89ab_cdef_0123_4567_89ab_cdef,
++            name: "Tester".into(),
++            properties: vec![login::Property {
++                name: "textures".into(),
++                value: "e30=".into(),
++                signature: Some("c2ln".into()),
++            }],
++        };
++        let payload = sign(b"secret", &forwarded);
++        assert_eq!(verify(b"secret", &payload), Ok(forwarded));
++        assert!(verify(b"other", &payload).is_err());
++    }
++
++    #[test]
++    fn a_signed_answer_matches_the_recording() {
++        // The recorded Velocity answer for `Tester` from 127.0.0.1 (a_recorded_answer_is_read), rebuilt.
++        let recorded = hex(RECORDED);
++        let read = verify(SECRET, &recorded).unwrap();
++        assert_eq!(sign(SECRET, &read), recorded);
++    }
++
++    #[test]
++    fn hmac_matches_the_rfc_4231_vectors() {
++        assert_eq!(
++            hmac_sha256(&[0x0b; 20], b"Hi There").to_vec(),
++            hex("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
++        );
++        assert_eq!(
++            hmac_sha256(b"Jefe", b"what do ya want for nothing?").to_vec(),
++            hex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
++        );
++        // A key longer than the block is hashed first (RFC 4231 test case 6).
++        assert_eq!(
++            hmac_sha256(
++                &[0xaa; 131],
++                b"Test Using Larger Than Block-Size Key - Hash Key First"
++            )
++            .to_vec(),
++            hex("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
++        );
++    }
++
++    /// What a Velocity 4.3.1 proxy answered to `request()` for a player named Tester, recorded with a
++    /// stand-in backend and the throwaway secret below.
++    const SECRET: &[u8] = b"ISWncFxltwFE";
++    const RECORDED: &str = "189e73f57e7fe3d387de5f252fc0226e8288e5b15f23ee12924b34cf216b7f6901093132372e302e302e31f3d28cb072253cb1baeb2dadd2be89ae0654657374657200";
++
++    #[test]
++    fn a_recorded_answer_is_read() {
++        let got = verify(SECRET, &hex(RECORDED)).unwrap();
++        assert_eq!(got.address, "127.0.0.1".parse::<IpAddr>().unwrap());
++        assert_eq!(got.uuid, 0xf3d28cb0_7225_3cb1_baeb_2dadd2be89ae);
++        assert_eq!(got.name, "Tester");
++        assert!(got.properties.is_empty());
++    }
++
++    #[test]
++    fn another_secret_or_a_changed_byte_is_refused() {
++        let mut payload = hex(RECORDED);
++        assert!(verify(b"not the secret", &payload).is_err());
++        *payload.last_mut().unwrap() ^= 1;
++        assert!(verify(SECRET, &payload).unwrap_err().contains("not signed"));
++        assert!(verify(SECRET, &payload[..10]).is_err());
++    }
++
++    /// Signs `data` the way the proxy does, for the cases the recording doesn't cover.
++    fn signed(data: &Writer) -> Vec<u8> {
++        let mut out = hmac_sha256(SECRET, &data.data).to_vec();
++        out.extend_from_slice(&data.data);
++        out
++    }
++
++    fn body(
++        version: i32,
++        address: &str,
++        name: &str,
++        properties: &[(&str, &str, Option<&str>)],
++    ) -> Writer {
++        let mut w = Writer::new();
++        w.varint(version);
++        w.string(address);
++        w.uuid(7);
++        w.string(name);
++        w.varint(properties.len() as i32);
++        for (key, value, signature) in properties {
++            w.string(key);
++            w.string(value);
++            w.bool(signature.is_some());
++            if let Some(signature) = signature {
++                w.string(signature);
++            }
++        }
++        w
++    }
++
++    #[test]
++    fn properties_are_read_with_and_without_a_signature() {
++        let w = body(
++            1,
++            "::1",
++            "Alex",
++            &[("textures", "abc", Some("sig")), ("extra", "x", None)],
++        );
++        let got = verify(SECRET, &signed(&w)).unwrap();
++        assert_eq!(got.address, "::1".parse::<IpAddr>().unwrap());
++        assert_eq!(got.properties.len(), 2);
++        assert_eq!(got.properties[0].signature.as_deref(), Some("sig"));
++        assert_eq!(got.properties[1].signature, None);
++    }
++
++    #[test]
++    fn other_versions_and_bad_data_are_refused() {
++        assert!(verify(SECRET, &signed(&body(4, "127.0.0.1", "A", &[]))).is_err());
++        assert!(verify(SECRET, &signed(&body(1, "localhost", "A", &[]))).is_err());
++        assert!(
++            verify(
++                SECRET,
++                &signed(&body(1, "127.0.0.1", "much too long a name", &[]))
++            )
++            .is_err()
++        );
++        let mut w = body(1, "127.0.0.1", "A", &[]);
++        w.u8(0);
++        assert!(
++            verify(SECRET, &signed(&w))
++                .unwrap_err()
++                .contains("trailing")
++        );
++    }
++}
+diff --git a/crates/horizon-protocol/src/lib.rs b/crates/horizon-protocol/src/lib.rs
+index 60d8fffebb..c850a10f02 100644
+--- a/crates/horizon-protocol/src/lib.rs
++++ b/crates/horizon-protocol/src/lib.rs
+@@ -10,6 +10,7 @@ pub mod chunk;
+ pub mod connection;
+ pub mod crypto;
+ pub mod entity_data;
++pub mod forwarding;
+ pub mod frame;
+ pub mod hash_ops;
+ pub mod ids;
+-- 
+2.54.0 (Apple Git-157)
+

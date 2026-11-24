@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dima.kostishen@gmail.com>
+Date: Tue, 24 Nov 2026 14:44:50 +0100
+Subject: [PATCH] Server players show their health to the others at full health
+ too
+
+LivingEntity.DATA_HEALTH_ID is defined as 1 and set to the max health, so
+vanilla's pairing (getNonDefaultValues) sends a player's 20 to everyone who
+sees it. The hub left out exactly 20, so a client never had the health of
+another player at full health: anything reading it (Horizon's bots, picking
+living targets) took the player for not alive.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2kCwgZukLd4gu1ykmr
+---
+ crates/horizon-client/src/lan/hub.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/crates/horizon-client/src/lan/hub.rs b/crates/horizon-client/src/lan/hub.rs
+index f2021aaf3f..aae35c0236 100644
+--- a/crates/horizon-client/src/lan/hub.rs
++++ b/crates/horizon-client/src/lan/hub.rs
+@@ -3334,7 +3334,9 @@ impl Hub {
+         if let Some(bed) = bed.filter(|_| sleeping) {
+             meta.push((14, serializer::OPTIONAL_BLOCK_POS, Value::OptPos(Some(bed))));
+         }
+-        if (health - 1.0).abs() > f32::EPSILON && health != 20.0 {
++        // LivingEntity.DATA_HEALTH_ID: defined as 1, then set to the max health. The pairing sends the values that
++        // are not the defined ones (getNonDefaultValues), so a player at full health shows its 20 to the others.
++        if (health - 1.0).abs() > f32::EPSILON {
+             meta.push((9, serializer::FLOAT, Value::Float(health)));
+         }
+         if skin != 0 {
+-- 
+2.54.0 (Apple Git-157)
+

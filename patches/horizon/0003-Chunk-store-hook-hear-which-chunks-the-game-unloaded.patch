@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dimakostishen@gmail.com>
+Date: Tue, 10 Nov 2026 15:01:02 +0100
+Subject: [PATCH] Chunk store hook: hear which chunks the game unloaded
+
+`ChunkStore::unloaded` gets the chunks a server level let go of, after their
+saves are queued, so a store that holds something per chunk (a lease in a
+database several servers share) can give it up once those writes are in.
+Without a store nothing changes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2ieq7GzmXY5PzZCML5
+---
+ crates/horizon-client/src/game/world_update.rs | 8 ++++++++
+ crates/horizon-hooks/src/storage.rs            | 6 ++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/crates/horizon-client/src/game/world_update.rs b/crates/horizon-client/src/game/world_update.rs
+index 3a4fd61630..2bdeb33130 100644
+--- a/crates/horizon-client/src/game/world_update.rs
++++ b/crates/horizon-client/src/game/world_update.rs
+@@ -267,6 +267,14 @@ impl Game<'_> {
+         {
+             log::warn!("Horizon: failed to save unloaded chunks: {e}");
+         }
++        // A crate that keeps the chunks (horizon_hooks::storage) hears which ones the game let go of.
++        if !unloaded.is_empty()
++            && self.remote.is_none()
++            && let Some(store) = horizon_hooks::engine::chunk_store()
++        {
++            let chunks: Vec<(i32, i32)> = unloaded.iter().map(|c| (c.x, c.z)).collect();
++            store.unloaded(&self.save.root, &chunks);
++        }
+         // LevelChunk.registerTickContainerInLevel: a chunk that became
+         // resident has its tick containers before a command can schedule into
+         // it, even in a frozen level that runs no world tick. The unloaded
+diff --git a/crates/horizon-hooks/src/storage.rs b/crates/horizon-hooks/src/storage.rs
+index 64845200dd..19f246f3c9 100644
+--- a/crates/horizon-hooks/src/storage.rs
++++ b/crates/horizon-hooks/src/storage.rs
+@@ -32,6 +32,12 @@ pub trait ChunkStore: Send + Sync {
+         records: &[((i32, i32), Option<Vec<u8>>)],
+     ) -> io::Result<()>;
+ 
++    /// The game let go of these chunks of the dimension saved in `dimension_dir`: no player sees them any more.
++    /// Their last records may still be on their way to [`write`](Self::write) (the region writer saves after the
++    /// game moves on), so a store that gives up something per chunk (a lock, a lease) should wait for those
++    /// writes. A chunk read again afterwards is the game's again. Called on the game's thread.
++    fn unloaded(&self, _dimension_dir: &Path, _chunks: &[(i32, i32)]) {}
++
+     /// Which chunks of region `rx, rz` (32 by 32 chunks) have a record in `folder`, as bits `x + z * 32` of the
+     /// chunk within the region. The far view and the scan for chunks saved by older versions ask it. The default
+     /// says none, which only makes the far view draw generated terrain where saved terrain was.
+-- 
+2.54.0 (Apple Git-157)
+

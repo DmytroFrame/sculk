@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dimakostishen@gmail.com>
+Date: Tue, 10 Nov 2026 14:27:16 +0100
+Subject: [PATCH] Chunk store hook: chunks saved somewhere other than region
+ files
+
+A crate above the engine can offer a `horizon_hooks::storage::ChunkStore`
+(`Hooks::chunk_store`); the save layer then reads and writes chunk records
+(region, entities, poi) through it instead of the world's region files, as
+uncompressed named NBT. The far view and the old-chunk scan ask it which
+chunks of a region are saved. Without a registered store nothing changes.
+
+For servers that share one world through a database (Sculk's AnvilDB).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2ieq7GzmXY5PzZCML5
+---
+ crates/horizon-client/src/save.rs   | 87 ++++++++++++++++++++---------
+ crates/horizon-hooks/src/lib.rs     | 14 +++++
+ crates/horizon-hooks/src/storage.rs | 47 ++++++++++++++++
+ 3 files changed, 123 insertions(+), 25 deletions(-)
+ create mode 100644 crates/horizon-hooks/src/storage.rs
+
+diff --git a/crates/horizon-client/src/save.rs b/crates/horizon-client/src/save.rs
+index 016917c132..c480f8b48b 100644
+--- a/crates/horizon-client/src/save.rs
++++ b/crates/horizon-client/src/save.rs
+@@ -2193,6 +2193,21 @@ fn write_region_records(
+     folder: &str,
+     records: &[((i32, i32), &Record)],
+ ) -> Result<()> {
++    // A crate above the engine keeps the chunks (horizon_hooks::storage): it gets the records, uncompressed.
++    if let Some(store) = horizon_hooks::engine::chunk_store() {
++        let mut encoded = Vec::with_capacity(records.len());
++        for &(key, record) in records {
++            let bytes = match record.tag() {
++                Some(tag) => {
++                    Some(nbt::write_named(&tag, Limits::saved()).map_err(|e| e.to_string())?)
++                }
++                None => None,
++            };
++            encoded.push((key, bytes));
++        }
++        store.write(root, folder, &encoded)?;
++        return Ok(());
++    }
+     let timestamp = std::time::SystemTime::now()
+         .duration_since(std::time::UNIX_EPOCH)
+         .map_or(0, |d| d.as_secs() as u32);
+@@ -2391,6 +2406,16 @@ fn read_region_record(
+     x: i32,
+     z: i32,
+ ) -> Result<Option<NamedTag>> {
++    if let Some(store) = horizon_hooks::engine::chunk_store() {
++        return match store.read(root, folder, x, z)? {
++            Some(bytes) => Ok(Some(
++                nbt::read_named(&bytes, Limits::saved())
++                    .map_err(|e| e.to_string())?
++                    .0,
++            )),
++            None => Ok(None),
++        };
++    }
+     let key = (x >> 5, z >> 5);
+     let path = region_path(root, folder, key.0, key.1);
+     let Some(region) = cached_region(cache, key, &path, false)? else {
+@@ -2760,16 +2785,7 @@ impl SaveDir {
+             .get(&key)
+             .is_some_and(|region| region.checked.elapsed() < LOD_REGION_TTL);
+         if !fresh {
+-            let chunks = RegionFile::open(self.region_path("region", key.0, key.1))
+-                .ok()
+-                .map(|region| {
+-                    let mut bits = [0u64; 16];
+-                    for (pos, _) in region.chunks() {
+-                        let index = ((pos.x & 31) + (pos.z & 31) * 32) as usize;
+-                        bits[index / 64] |= 1 << (index % 64);
+-                    }
+-                    bits
+-                });
++            let chunks = self.region_bits("region", key.0, key.1);
+             regions.insert(
+                 key,
+                 LodRegion {
+@@ -2786,16 +2802,47 @@ impl SaveDir {
+     fn region_path(&self, folder: &str, rx: i32, rz: i32) -> PathBuf {
+         region_path(&self.root, folder, rx, rz)
+     }
++    /// Which chunks of region `rx, rz` have a record (bits `x + z * 32`): the region file's header, or the
++    /// chunk store's answer when a crate keeps the chunks (`horizon_hooks::storage`). `None` without a file.
++    fn region_bits(&self, folder: &str, rx: i32, rz: i32) -> Option<[u64; 16]> {
++        if let Some(store) = horizon_hooks::engine::chunk_store() {
++            return store.saved_in_region(&self.root, folder, rx, rz).ok();
++        }
++        let region = RegionFile::open(self.region_path(folder, rx, rz)).ok()?;
++        let mut bits = [0u64; 16];
++        for (pos, _) in region.chunks() {
++            let index = ((pos.x & 31) + (pos.z & 31) * 32) as usize;
++            bits[index / 64] |= 1 << (index % 64);
++        }
++        Some(bits)
++    }
++    /// A saved terrain record for the far view, read around the gameplay region cache (far reads cover the whole
++    /// view, which must not fill that cache).
++    fn read_far_record(&self, x: i32, z: i32) -> Option<NamedTag> {
++        if let Some(store) = horizon_hooks::engine::chunk_store() {
++            let bytes = store.read(&self.root, "region", x, z).ok()??;
++            return nbt::read_named(&bytes, Limits::default())
++                .ok()
++                .map(|(root, _)| root);
++        }
++        let mut region = RegionFile::open(self.region_path("region", x >> 5, z >> 5)).ok()?;
++        region
++            .read(ChunkPos::new(x, z))
++            .ok()??
++            .nbt(Limits::default())
++            .ok()
++    }
+     /// The chunks of a region file that an older version generated, as
+     /// `IOWorker.createOldDataForRegion` finds them (bit `x + z * 32`): saved
+     /// before DataVersion 4997, or with `blending_data`.
+     pub fn old_chunk_bits(&self, rx: i32, rz: i32) -> [u64; 16] {
+         let mut bits = [0u64; 16];
+-        let Ok(region) = RegionFile::open(self.region_path("region", rx, rz)) else {
++        let Some(saved) = self.region_bits("region", rx, rz) else {
+             return bits;
+         };
+-        let present: Vec<ChunkPos> = region.chunks().map(|(pos, _)| pos).collect();
+-        drop(region);
++        let present = (0..1024)
++            .filter(|i| saved[i / 64] & (1 << (i % 64)) != 0)
++            .map(|i| ChunkPos::new(rx * 32 + (i % 32) as i32, rz * 32 + (i / 32) as i32));
+         for pos in present {
+             // `IOWorker` reads the record as saved, before any upgrade.
+             let Some(root) = self.read_record_raw("region", pos.x, pos.z) else {
+@@ -2907,12 +2954,7 @@ impl SaveDir {
+             if !self.lod_saved(x, z) {
+                 return None;
+             }
+-            let mut region = RegionFile::open(self.region_path("region", x >> 5, z >> 5)).ok()?;
+-            let mut root = region
+-                .read(ChunkPos::new(x, z))
+-                .ok()??
+-                .nbt(Limits::default())
+-                .ok()?;
++            let mut root = self.read_far_record(x, z)?;
+             self.upgrade_record(Folder::Region, &mut root).ok()?;
+             root
+         };
+@@ -5287,12 +5329,7 @@ impl SaveDir {
+                 return None;
+             }
+             // Far-only reads must not populate the gameplay region cache across the whole view.
+-            let mut region = RegionFile::open(self.region_path("region", x >> 5, z >> 5)).ok()?;
+-            let mut root = region
+-                .read(ChunkPos::new(x, z))
+-                .ok()??
+-                .nbt(Limits::default())
+-                .ok()?;
++            let mut root = self.read_far_record(x, z)?;
+             self.upgrade_record(Folder::Region, &mut root).ok()?;
+             root
+         };
+diff --git a/crates/horizon-hooks/src/lib.rs b/crates/horizon-hooks/src/lib.rs
+index 48fb4cf0f5..7540e6b86a 100644
+--- a/crates/horizon-hooks/src/lib.rs
++++ b/crates/horizon-hooks/src/lib.rs
+@@ -22,6 +22,7 @@ pub mod pages;
+ pub mod players;
+ mod registry;
+ pub mod settings;
++pub mod storage;
+ pub mod tunnel;
+ 
+ use registry::Registry;
+@@ -88,6 +89,12 @@ pub trait Hooks: Sync {
+         None
+     }
+ 
++    /// Where saved chunks go instead of the world's region files ([`storage`]); the first hook that offers a
++    /// store is used, for the whole run. Asked once, when the first chunk is read or written.
++    fn chunk_store(&self) -> Option<&dyn storage::ChunkStore> {
++        None
++    }
++
+     /// A game window opened: once, before the first frame, for every run that has a window,
+     /// automated ones included ([`Client::automated`]); never for a dedicated server.
+     fn client_started(&self, _client: &Client) {}
+@@ -245,6 +252,13 @@ pub mod engine {
+         }
+     }
+ 
++    /// The chunk store a hook offers ([`Hooks::chunk_store`]), the first one's; `None` keeps region files.
++    pub fn chunk_store() -> Option<&'static dyn storage::ChunkStore> {
++        static STORE: std::sync::OnceLock<Option<&'static dyn storage::ChunkStore>> =
++            std::sync::OnceLock::new();
++        *STORE.get_or_init(|| all().iter().find_map(|h| h.chunk_store()))
++    }
++
+     /// [`Hooks::client_started`].
+     pub fn client_started(client: &Client) {
+         for hooks in all() {
+diff --git a/crates/horizon-hooks/src/storage.rs b/crates/horizon-hooks/src/storage.rs
+new file mode 100644
+index 0000000000..64845200dd
+--- /dev/null
++++ b/crates/horizon-hooks/src/storage.rs
+@@ -0,0 +1,47 @@
++//! Where the game keeps saved chunks when a crate above the engine keeps them somewhere other than the world's
++//! region files: a database that several servers share, for one. The engine keeps everything else about saving
++//! (when it saves, the records' contents, upgrading old ones); a [`ChunkStore`] only holds the records.
++//!
++//! A record is what a region file holds for a chunk once decompressed: a named NBT root, as bytes. Folders are the
++//! region file folders of a dimension: `region` (terrain), `entities` and `poi`. A dimension is named by the folder
++//! the game saves it in (`world/`, `world/dimensions/minecraft/the_nether`...), which the store maps to its own keys.
++//!
++//! Without a registered store, the game uses region files, as vanilla does.
++
++use std::io;
++use std::path::Path;
++
++/// The chunk records of every dimension of a world.
++pub trait ChunkStore: Send + Sync {
++    /// The record of chunk `x, z` in `folder` of the dimension saved in `dimension_dir`, or `None` when the chunk
++    /// was never saved. Called on the game's threads, often: it should answer from memory when it can.
++    fn read(
++        &self,
++        dimension_dir: &Path,
++        folder: &str,
++        x: i32,
++        z: i32,
++    ) -> io::Result<Option<Vec<u8>>>;
++
++    /// Stores `records` in order; `None` deletes a chunk's record. Called on the game's region writer thread; once
++    /// it returns the records count as saved.
++    fn write(
++        &self,
++        dimension_dir: &Path,
++        folder: &str,
++        records: &[((i32, i32), Option<Vec<u8>>)],
++    ) -> io::Result<()>;
++
++    /// Which chunks of region `rx, rz` (32 by 32 chunks) have a record in `folder`, as bits `x + z * 32` of the
++    /// chunk within the region. The far view and the scan for chunks saved by older versions ask it. The default
++    /// says none, which only makes the far view draw generated terrain where saved terrain was.
++    fn saved_in_region(
++        &self,
++        _dimension_dir: &Path,
++        _folder: &str,
++        _rx: i32,
++        _rz: i32,
++    ) -> io::Result<[u64; 16]> {
++        Ok([0; 16])
++    }
++}
+-- 
+2.54.0 (Apple Git-157)
+

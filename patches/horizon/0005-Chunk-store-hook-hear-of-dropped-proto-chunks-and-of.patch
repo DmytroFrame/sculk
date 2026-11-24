@@ -1,0 +1,158 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dima.kostishen@gmail.com>
+Date: Tue, 24 Nov 2026 02:12:04 +0100
+Subject: [PATCH] Chunk store hook: hear of dropped proto chunks and of the
+ resident ones
+
+Generation reads chunks it may drop unfinished (a proto past the view, a job
+cancelled when its player moved on), which no unload reports: a store that holds
+something per chunk read (a lease) kept it for ever. Dropped protos are now
+reported as unloads, and now and then the store hears every chunk the game
+holds or works on, to let go of the rest.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2kCwgZukLd4gu1ykmr
+---
+ crates/horizon-client-render/src/streaming.rs | 19 +++++++++++++++
+ crates/horizon-client/src/game.rs             |  3 +++
+ .../horizon-client/src/game/world_update.rs   | 24 +++++++++++++++++--
+ crates/horizon-hooks/src/storage.rs           |  6 +++++
+ 4 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/crates/horizon-client-render/src/streaming.rs b/crates/horizon-client-render/src/streaming.rs
+index c5a3911501..b63bcaa086 100644
+--- a/crates/horizon-client-render/src/streaming.rs
++++ b/crates/horizon-client-render/src/streaming.rs
+@@ -482,6 +482,9 @@ pub struct Streaming {
+     scan_age: u8,
+     /// The centre and radius the sweep was last reset for.
+     scan_area: ((i32, i32), i32),
++    /// Proto chunks the sweep dropped since the last `take_dropped_protos`: read from the save (or generated) for
++    /// generation near the view, never finished. A chunk store above the engine hears of them as of unloads.
++    dropped_protos: Vec<(i32, i32)>,
+     generating: FxHashSet<(i32, i32)>,
+     generation_scan: GenerationScan,
+     /// Proto chunks: `None` while checked out to a decoration or save job.
+@@ -1116,6 +1119,7 @@ impl Streaming {
+             order: 0,
+             scan_age: 0,
+             scan_area: ((i32::MIN, i32::MIN), i32::MIN),
++            dropped_protos: Vec::new(),
+             generating: Default::default(),
+             generation_scan: GenerationScan::default(),
+             protos: Default::default(),
+@@ -1404,6 +1408,20 @@ impl Streaming {
+         }
+     }
+     /// Check out the proto chunks at `keys` and save them on a worker.
++    /// The columns this streamer works on: generating, kept as protos, or finishing.
++    pub fn columns_in_work(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
++        self.generating
++            .iter()
++            .chain(self.protos.keys())
++            .chain(self.finishing.iter())
++            .copied()
++    }
++
++    /// The proto chunks dropped since the last call.
++    pub fn take_dropped_protos(&mut self) -> Vec<(i32, i32)> {
++        std::mem::take(&mut self.dropped_protos)
++    }
++
+     fn save_checked_out(&mut self, keys: impl IntoIterator<Item = (i32, i32)>) {
+         let protos: Vec<((i32, i32), Proto)> = keys
+             .into_iter()
+@@ -1816,6 +1834,7 @@ impl Streaming {
+                 } else {
+                     self.protos.remove(&key);
+                     self.light_views.remove(&key);
++                    self.dropped_protos.push(key);
+                 }
+             }
+             self.save_checked_out(written);
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 23d2f184da..27d77ffc16 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -2840,6 +2840,8 @@ struct Game<'a> {
+     native_mod_screen: Option<String>,
+     /// Meshed sections waiting for an upload budget (Horizon settings).
+     pending_uploads: Vec<((i32, i32, i32), horizon_client::mesher::SectionMesh)>,
++    /// World updates counted for the chunk store's reports of the resident chunks (`world_update.rs`).
++    resident_report: u32,
+     /// This frame's view frustum, for culling entities and block entities.
+     view_frustum: Option<horizon_client::gfx::Frustum>,
+     /// Whether the renderer's section-occlusion graph is active for this view.
+@@ -11975,6 +11977,7 @@ impl<'a> Game<'a> {
+             async_particle_culler: RefCell::new(Default::default()),
+             pack_shadow_casters: (false, false),
+             pending_uploads: Vec::new(),
++            resident_report: 0,
+             frame_graph: Default::default(),
+             extras: Default::default(),
+             pvp: Default::default(),
+diff --git a/crates/horizon-client/src/game/world_update.rs b/crates/horizon-client/src/game/world_update.rs
+index 2bdeb33130..4921ba9988 100644
+--- a/crates/horizon-client/src/game/world_update.rs
++++ b/crates/horizon-client/src/game/world_update.rs
+@@ -142,6 +142,8 @@ impl Game<'_> {
+         }
+     }
+     pub(super) fn update_world(&mut self) {
++        /// Updates between two reports of the resident chunks to a chunk store (`horizon_hooks::storage`).
++        const RESIDENT_REPORT_EVERY: u32 = 40;
+         if let Err(e) = horizon_client::spans::time("poll_remote", || self.poll_remote()) {
+             log::warn!("Horizon: {e}");
+         }
+@@ -268,11 +270,29 @@ impl Game<'_> {
+             log::warn!("Horizon: failed to save unloaded chunks: {e}");
+         }
+         // A crate that keeps the chunks (horizon_hooks::storage) hears which ones the game let go of.
+-        if !unloaded.is_empty()
++        // Now and then, everything the game holds of this dimension, for a store to let go of the rest.
++        if self.remote.is_none()
++            && let Some(store) = horizon_hooks::engine::chunk_store()
++        {
++            self.resident_report = self.resident_report.wrapping_add(1);
++            if self.resident_report % RESIDENT_REPORT_EVERY == 0 {
++                let mut chunks = self
++                    .world
++                    .chunks
++                    .keys()
++                    .copied()
++                    .chain(self.streaming.columns_in_work());
++                store.resident(&self.save.root, &mut chunks);
++            }
++        }
++        // Proto chunks dropped unfinished count too: generation read them.
++        let dropped = self.streaming.take_dropped_protos();
++        if (!unloaded.is_empty() || !dropped.is_empty())
+             && self.remote.is_none()
+             && let Some(store) = horizon_hooks::engine::chunk_store()
+         {
+-            let chunks: Vec<(i32, i32)> = unloaded.iter().map(|c| (c.x, c.z)).collect();
++            let mut chunks: Vec<(i32, i32)> = unloaded.iter().map(|c| (c.x, c.z)).collect();
++            chunks.extend(dropped);
+             store.unloaded(&self.save.root, &chunks);
+         }
+         // LevelChunk.registerTickContainerInLevel: a chunk that became
+diff --git a/crates/horizon-hooks/src/storage.rs b/crates/horizon-hooks/src/storage.rs
+index 19f246f3c9..b1754fb23e 100644
+--- a/crates/horizon-hooks/src/storage.rs
++++ b/crates/horizon-hooks/src/storage.rs
+@@ -38,6 +38,12 @@ pub trait ChunkStore: Send + Sync {
+     /// writes. A chunk read again afterwards is the game's again. Called on the game's thread.
+     fn unloaded(&self, _dimension_dir: &Path, _chunks: &[(i32, i32)]) {}
+ 
++    /// Every chunk of the dimension saved in `dimension_dir` the game holds or works on now: finished, being
++    /// generated or finished, or read for the generation of its neighbours. Called now and then on the game's
++    /// thread, so that a store holding something per chunk (a lease) can let go of chunks the game read once and
++    /// dropped without an unload, such as a generation job cancelled when its player moved on.
++    fn resident(&self, _dimension_dir: &Path, _chunks: &mut dyn Iterator<Item = (i32, i32)>) {}
++
+     /// Which chunks of region `rx, rz` (32 by 32 chunks) have a record in `folder`, as bits `x + z * 32` of the
+     /// chunk within the region. The far view and the scan for chunks saved by older versions ask it. The default
+     /// says none, which only makes the far view draw generated terrain where saved terrain was.
+-- 
+2.54.0 (Apple Git-157)
+

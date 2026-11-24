@@ -1,0 +1,140 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dmytro Kostyshyn <dima.kostishen@gmail.com>
+Date: Tue, 24 Nov 2026 03:49:58 +0100
+Subject: [PATCH] Commands: /enchant on a server's players; /data get makes a
+ merchant's offers
+
+/enchant took only the player in place, so on a dedicated server every player
+was 'not a valid entity for this command'; a server's other players now have
+their held item enchanted through for_player, with vanilla's messages.
+
+/data get on a villager no one traded with had no Offers: vanilla's
+AbstractVillager.addAdditionalSaveData asks getOffers(), which makes them the
+first time. The entity read now does too.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0183TW2kCwgZukLd4gu1ykmr
+---
+ .../horizon-client/src/game/commands/data.rs  |  9 +++
+ .../src/game/commands/effects.rs              | 80 ++++++++++++-------
+ 2 files changed, 62 insertions(+), 27 deletions(-)
+
+diff --git a/crates/horizon-client/src/game/commands/data.rs b/crates/horizon-client/src/game/commands/data.rs
+index f208054f1b..7a976471ee 100644
+--- a/crates/horizon-client/src/game/commands/data.rs
++++ b/crates/horizon-client/src/game/commands/data.rs
+@@ -113,6 +113,15 @@ impl Game<'_> {
+                 // `saveWithoutId` writes the entity as saved, riders under
+                 // `Passengers`: `/data get` reads the same tree persistence does (#1519).
+                 let i = self.mobs.iter().position(|m| m.id == id)?;
++                // `AbstractVillager.addAdditionalSaveData` asks `getOffers()`, which makes a merchant's offers the
++                // first time: a villager read before anyone traded with it has its offers, as in vanilla.
++                use horizon_client::mobs::Species;
++                if matches!(
++                    self.mobs[i].species(),
++                    Species::Villager | Species::WanderingTrader
++                ) {
++                    self.ensure_offers(i);
++                }
+                 self.mob_tree_nbt(i)
+             }
+             Target::Item(id) => {
+diff --git a/crates/horizon-client/src/game/commands/effects.rs b/crates/horizon-client/src/game/commands/effects.rs
+index 12c2cee9d3..9c0d10f9dd 100644
+--- a/crates/horizon-client/src/game/commands/effects.rs
++++ b/crates/horizon-client/src/game/commands/effects.rs
+@@ -238,34 +238,22 @@ impl Game<'_> {
+         for t in targets {
+             match t {
+                 Target::Player => {
+-                    let Some(stack) = self.inventory[self.selected].clone() else {
+-                        if single {
+-                            return Err(err(
+-                                "commands.enchant.failed.itemless",
+-                                &[&self.target_name(t).plain()],
+-                            ));
+-                        }
+-                        continue;
+-                    };
+-                    let e = &self.stations().enchantments;
+-                    let compatible = e.can_enchant(self.items(), &id, &stack.item)
+-                        && stack
+-                            .crafting_enchantments()
+-                            .iter()
+-                            .all(|(other, _)| e.compatible(other, &id));
+-                    if compatible {
+-                        if let Some(s) = self.inventory[self.selected].as_mut() {
+-                            s.enchant(&id, level.max(0) as u32);
+-                        }
++                    if self.enchant_held(t, &id, level, single)? {
+                         tracker.track(t, true);
+-                    } else if single {
+-                        // getHoverName().getString(): the custom or item name, no brackets.
+-                        return Err(err(
+-                            "commands.enchant.failed.incompatible",
+-                            &[&stack
+-                                .custom_name()
+-                                .unwrap_or_else(|| self.pack.names.item(&stack.item).to_string())],
+-                        ));
++                    }
++                }
++                // Another player of the server: its own held item, as for the player in place.
++                Target::Guest(_) => {
++                    let name = self.target_name(t).plain();
++                    match self.for_player(t, |g| g.enchant_held(Target::Player, &id, level, single))
++                    {
++                        Some(Ok(true)) => tracker.track(t, true),
++                        Some(Ok(false)) => {}
++                        Some(Err(e)) => return Err(e),
++                        None if single => {
++                            return Err(err("commands.enchant.failed.entity", &[&name]));
++                        }
++                        None => {}
+                     }
+                 }
+                 Target::Mob(mob) => {
+@@ -321,3 +309,41 @@ impl Game<'_> {
+         Ok(tracker.total)
+     }
+ }
++
++impl Game<'_> {
++    /// `/enchant` on the held item of the player in place (`t` names it in messages): true when enchanted. A
++    /// server's other players go through `for_player`, which puts them in place for the call.
++    fn enchant_held(&mut self, t: Target, id: &str, level: i32, single: bool) -> R<bool> {
++        let Some(stack) = self.inventory[self.selected].clone() else {
++            if single {
++                return Err(err(
++                    "commands.enchant.failed.itemless",
++                    &[&self.target_name(t).plain()],
++                ));
++            }
++            return Ok(false);
++        };
++        let e = &self.stations().enchantments;
++        let compatible = e.can_enchant(self.items(), id, &stack.item)
++            && stack
++                .crafting_enchantments()
++                .iter()
++                .all(|(other, _)| e.compatible(other, id));
++        if compatible {
++            if let Some(s) = self.inventory[self.selected].as_mut() {
++                s.enchant(id, level.max(0) as u32);
++            }
++            return Ok(true);
++        }
++        if single {
++            // getHoverName().getString(): the custom or item name, no brackets.
++            return Err(err(
++                "commands.enchant.failed.incompatible",
++                &[&stack
++                    .custom_name()
++                    .unwrap_or_else(|| self.pack.names.item(&stack.item).to_string())],
++            ));
++        }
++        Ok(false)
++    }
++}
+-- 
+2.54.0 (Apple Git-157)
+
