@@ -1,0 +1,26 @@
+[package]
+name = "sculk-anvildb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "AnvilDB: the database of Minecraft worlds and chunk leases (docs/docs/07-anvildb.md)"
+
+[dependencies]
+sculk-proto = { path = "../sculk-proto" }
+horizon-core.workspace = true
+horizon-world.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+sha1.workspace = true
+sha2 = "0.10"
+hex.workspace = true
+ureq.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
