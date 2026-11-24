@@ -1,4 +1,4 @@
-//! Java Edition clients (docs/docs/05-io-server.md, "Обов'язки"): handshake, server list ping, login and
+//! Java Edition clients (docs/docs/05-io-server.md, "Duties"): handshake, server list ping, login and
 //! configuration happen here; in play IO only frames packets and forwards them between the client and its worker.
 //!
 //! Online mode (encryption and Mojang's session server) is `auth`'s. Packets are `horizon_protocol`'s.
@@ -239,7 +239,7 @@ async fn join(
         }
     }
     // A player whose zone falls in a micro world goes to that micro world's worker; anyone else to the least
-    // loaded one (docs/docs/05-io-server.md, "Розподіл").
+    // loaded one (docs/docs/05-io-server.md, "Duties").
     // The player appears where it left, or at the spawn the first time.
     let spawn = match shared.saved_chunk(&settings.world, profile.uuid).await {
         Some((dimension, x, z)) => sculk_proto::anvildb::ChunkPos { world: settings.world.clone(), dimension, x, z },

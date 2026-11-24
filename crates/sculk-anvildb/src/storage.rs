@@ -1,5 +1,5 @@
 //! Chunk records in vanilla's layout and region files (`horizon_world::region`), so a world folder copies in and
-//! out of AnvilDB as it is (docs/docs/07-anvildb.md, "Класичний" format):
+//! out of AnvilDB as it is (docs/docs/07-anvildb.md, "Classic" format):
 //!
 //! ```text
 //! <data>/<world>/dimensions/<namespace>/<path>/region/r.X.Z.mca
@@ -176,7 +176,7 @@ impl RegionStore {
         Ok(())
     }
 
-    /// Archives the region files no write touched for `cold` (docs/docs/07-anvildb.md, "архів холодних регіонів"):
+    /// Archives the region files no write touched for `cold` (docs/docs/07-anvildb.md, "Storage and archive"):
     /// each is gzipped under `archive/` and its open handle dropped. Returns how many were archived.
     pub fn archive_cold(&self, cold: std::time::Duration) -> anyhow::Result<usize> {
         let mut regions = Vec::new();

@@ -61,7 +61,7 @@ impl MicroWorld {
             .collect()
     }
 
-    /// One game tick. The vanilla tick order goes here (docs/docs/06-worker.md, "Тік MW").
+    /// One game tick. The vanilla tick order goes here (docs/docs/06-worker.md, "An MW tick").
     pub fn tick(&mut self) {
         self.ticks += 1;
     }

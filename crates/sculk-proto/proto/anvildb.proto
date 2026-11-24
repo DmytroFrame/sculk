@@ -112,7 +112,7 @@ message ListLeasesResponse {
   repeated Lease leases = 1;
 }
 
-// ---- Chunk storage (docs/docs/07-anvildb.md, "Формати зберігання") ----
+// ---- Chunk storage (docs/docs/07-anvildb.md, "Storage formats") ----
 // Records are what a region file holds for a chunk once decompressed: a named NBT root. AnvilDB keeps them in
 // vanilla-compatible region files, so a world can be copied in and out as it is.
 

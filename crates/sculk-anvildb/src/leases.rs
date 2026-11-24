@@ -1,4 +1,4 @@
-//! The lease table: who may read and write each chunk (docs/docs/07-anvildb.md, "Оренди чанків").
+//! The lease table: who may read and write each chunk (docs/docs/07-anvildb.md, "Chunk leases").
 //!
 //! Pure logic with the clock passed in, so tests control time. An expired lease counts as free.
 

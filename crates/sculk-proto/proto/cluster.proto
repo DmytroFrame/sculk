@@ -8,7 +8,7 @@ package sculk.cluster.v1;
 service Io {
   rpc Register(stream WorkerMessage) returns (stream IoMessage);
   rpc AllocateEntityIds(AllocateEntityIdsRequest) returns (EntityIdBlock);
-  // From a worker's engine: it wanted a chunk another worker's engine holds (docs/docs/03-mikrosvity.md, "Злиття").
+  // From a worker's engine: it wanted a chunk another worker's engine holds (docs/docs/03-mikrosvity.md, "Merge").
   rpc ReportConflict(ConflictReport) returns (ConflictAck);
 }
 
@@ -98,7 +98,7 @@ message IoMessage {
   }
 }
 
-// Play packets of many players sent together (docs/docs/06-worker.md, "пакетна передача"): one message instead of
+// Play packets of many players sent together (docs/docs/06-worker.md, "The connection to AnvilDB"): one message instead of
 // one per packet keeps the stream's framing small when many players play.
 message PlayerBatch {
   repeated PlayerPackets packets = 1;
@@ -125,7 +125,7 @@ message PreparePlayer {
   bytes uuid = 2;
 }
 
-// Play packets of one player (docs/docs/05-io-server.md, "Розподіл роботи з пакетами"). From IO to the worker: packet
+// Play packets of one player (docs/docs/05-io-server.md, "Sharing the packet work"). From IO to the worker: packet
 // bodies (VarInt ID + payload). From the worker to IO: frame contents, already compressed by the worker when the
 // connection compresses; IO only adds the length prefix (and, later, encrypts).
 message PlayerPackets {

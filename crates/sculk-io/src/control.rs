@@ -46,7 +46,7 @@ impl Shared {
         })
     }
 
-    /// The worker whose micro world holds `chunk`, if any (docs/docs/05-io-server.md, "Розподіл").
+    /// The worker whose micro world holds `chunk`, if any (docs/docs/05-io-server.md, "Duties").
     pub async fn chunk_owner(&self, chunk: ChunkPos) -> anyhow::Result<Option<u32>> {
         let lease = self.anvildb.clone().owner(OwnerRequest { chunk: Some(chunk) }).await?.into_inner().lease;
         Ok(lease.and_then(|l| l.holder).map(|h| h.worker_id))

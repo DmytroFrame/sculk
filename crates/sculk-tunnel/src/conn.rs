@@ -1,7 +1,7 @@
 //! One tunnel session's reliable, ordered byte stream over datagrams, with no I/O of its own (the driver passes
 //! datagrams and the clock in), so it can be tested on a made-up lossy link.
 //!
-//! What it does better than TCP on a lossy path (docs/docs/11-nether-tunnel.md, "Звідки виграш"): every datagram
+//! What it does better than TCP on a lossy path (docs/docs/11-nether-tunnel.md, "Where the gain comes from"): every datagram
 //! carries a selective acknowledgement of the 32 sequence numbers after the cumulative one, a segment the receiver
 //! reported missing three times is sent again at once instead of after a timeout, and the retransmission timeout
 //! follows the measured round trip down to 20 ms (TCP's minimum is usually 200 ms or more).

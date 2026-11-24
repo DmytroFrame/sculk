@@ -1,4 +1,4 @@
-//! Micro worlds merging across engines (docs/docs/03-mikrosvity.md, "Злиття"): an engine that wants a chunk another
+//! Micro worlds merging across engines (docs/docs/03-mikrosvity.md, "Merge"): an engine that wants a chunk another
 //! engine holds tells IO, and IO moves that engine's players near the chunk to the owner. Each move is Horizon's
 //! hand-over (docs/server.md, "A hand-over, in order"): the player is expected on the new engine and frozen on the
 //! old one, the client is switched over (`proxy`), its record imported and placed on the new engine, and only then
@@ -72,7 +72,7 @@ impl Shared {
     /// An engine wanted a chunk another engine holds. If the owner has players near it, their micro worlds met: the
     /// players of one near the chunk join the other, the one with more players taking the other's, the lower worker
     /// ID among equals, so two engines that meet at once agree on the direction (docs/docs/03-mikrosvity.md,
-    /// "Одночасне злиття"). If not, the owner holds the chunk only until its last saves are done (its players left
+    /// "Simultaneous merge"). If not, the owner holds the chunk only until its last saves are done (its players left
     /// or moved away), and the asking engine should wait for it: the answer.
     pub async fn on_conflict(self: Arc<Self>, report: ConflictReport) -> bool {
         let (asking, owner) = (report.worker_id, report.owner_worker_id);
@@ -222,7 +222,7 @@ impl Shared {
         moves.get(&uuid).is_some_and(|at| at.elapsed() < COOLDOWN)
     }
 
-    /// Splits micro worlds whose players went apart (docs/docs/03-mikrosvity.md, "Розщеплення"): every `every`, each
+    /// Splits micro worlds whose players went apart (docs/docs/03-mikrosvity.md, "Split"): every `every`, each
     /// engine's players are grouped by the distance between their zones. When the zones of two groups have stayed at
     /// least `split.gap` chunks apart for `split.after`, the groups without the micro world's founder (the player
     /// there longest) move to engines with nobody on them, one engine per group.

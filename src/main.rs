@@ -1,4 +1,4 @@
-//! `sculk`: one binary, three roles (docs/docs/04-arkhitektura.md, "Один бінарник — три ролі").
+//! `sculk`: one binary, three roles (docs/docs/04-arkhitektura.md, "One binary, three roles").
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;

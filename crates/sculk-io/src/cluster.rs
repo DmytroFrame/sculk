@@ -66,7 +66,7 @@ impl Shared {
         self.broadcast(on, serde_json::json!({ "translate": key, "with": [name], "color": "yellow" }));
     }
 
-    /// Keeps one time of day and one weather across the engines (docs/docs/09-hlobalnyi-stan.md, "Глобальний годинник"): the engine
+    /// Keeps one time of day and one weather across the engines (docs/docs/09-hlobalnyi-stan.md, "What lives where"): the engine
     /// with the most players (the lowest ID among equals) keeps the time, the others are set to it when they drift.
     /// A night skipped on any engine (its players slept, by vanilla's rule among them) is skipped for all: an
     /// engine whose clock jumped ahead of what its ticks explain sets everyone's (docs/docs/13-obmezhennia.md, the

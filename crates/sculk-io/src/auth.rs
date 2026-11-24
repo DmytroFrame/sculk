@@ -1,4 +1,4 @@
-//! Online mode (docs/docs/05-io-server.md, "Обов'язки"): IO encrypts the connection and asks Mojang's session
+//! Online mode (docs/docs/05-io-server.md, "Duties"): IO encrypts the connection and asks Mojang's session
 //! server whether the player really joined, as vanilla's `ServerLoginPacketListenerImpl` does. The profile it gets
 //! back (UUID, skin and cape) is what workers see, in their own login or in the engine's Velocity forwarding.
 

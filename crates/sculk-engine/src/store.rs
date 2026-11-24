@@ -1,6 +1,6 @@
 //! Horizon's chunk store hook (`horizon_hooks::storage`, patches/horizon/0001) backed by AnvilDB: the engine reads
 //! and writes chunk records there instead of its own region files, and holds a lease on every chunk it reads, so
-//! no other worker writes it meanwhile (docs/docs/03-mikrosvity.md, "Зона та оренди").
+//! no other worker writes it meanwhile (docs/docs/03-mikrosvity.md, "Zone and leases").
 //!
 //! The whole engine is one micro world for now: one lease holder per worker.
 
@@ -291,7 +291,7 @@ impl AnvilStore {
             };
             // Another micro world holds it. Either it is letting the chunk go (its players left), and the chunk is
             // waited for, or the micro worlds met, and IO moves this engine's players near the chunk to the owner's
-            // engine (docs/docs/03-mikrosvity.md, "Злиття").
+            // engine (docs/docs/03-mikrosvity.md, "Merge").
             let wait = self.conflict(owner.worker_id, dimension, x, z);
             if !wait || waiting_since.elapsed() >= WAIT_FOR_OWNER {
                 return Err(io_error(format!(
@@ -304,7 +304,7 @@ impl AnvilStore {
     }
 
     /// Takes the lease on `key` in one request with the other chunks wanted within BATCH_WINDOW (docs/docs/06-worker.md,
-    /// "черга команд"): the first reader waits the window, then asks for all of them. True when the lease is held;
+    /// "The connection to AnvilDB"): the first reader waits the window, then asks for all of them. True when the lease is held;
     /// false when the batch met a chunk of another micro world, and each of its chunks goes its own way.
     fn lease_in_batch(&self, key: &Chunk) -> io::Result<bool> {
         let (done, outcome) = std::sync::mpsc::channel();

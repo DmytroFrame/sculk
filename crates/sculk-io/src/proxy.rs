@@ -3,7 +3,7 @@
 //! (the worker sets `network-compression-threshold`), so frames cross untouched, only re-encrypted for an online
 //! client.
 //!
-//! A player moves to another engine without leaving the server (docs/docs/03-mikrosvity.md, "Злиття"): IO logs in
+//! A player moves to another engine without leaving the server (docs/docs/03-mikrosvity.md, "Merge"): IO logs in
 //! to the new engine itself, sends the client back to configuration (`StartConfiguration`, as Velocity does when it
 //! switches servers), and from the client's acknowledgement on, the client talks to the new engine, which runs the
 //! configuration and the join again. The client shows a short loading screen. `handover` decides when, and moves the
@@ -398,7 +398,7 @@ async fn relay(
 const WORKER_GONE: Duration = Duration::from_millis(1500);
 
 /// The player's engine went away with its worker: the player goes on on another engine, loaded from what AnvilDB
-/// has of it (docs/docs/10-nadiinist.md, "Відмова воркера"), instead of losing its connection. False when its
+/// has of it (docs/docs/10-nadiinist.md, "Failure scenarios"), instead of losing its connection. False when its
 /// worker is alive (the engine closed the connection on purpose) or no other engine takes the player.
 async fn rescue(
     shared: &Arc<Shared>,

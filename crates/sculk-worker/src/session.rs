@@ -516,7 +516,7 @@ async fn packets(ctx: &Ctx, p: PlayerPackets) {
     rezone(ctx, mw_id).await;
 }
 
-/// Grows and shrinks a micro world's zone to what its players need (docs/docs/03-mikrosvity.md, "Ріст"): leases on
+/// Grows and shrinks a micro world's zone to what its players need (docs/docs/03-mikrosvity.md, "Growth"): leases on
 /// new chunks first, then the chunks no one needs are released.
 async fn rezone(ctx: &Ctx, mw_id: u64) {
     let (add, remove) = {
@@ -650,7 +650,7 @@ async fn renewals(ctx: Ctx) {
 }
 
 /// Ticks every micro world 20 times a second. One thread for now; the per-core scheduler of
-/// docs/docs/06-worker.md ("Модель потоків") replaces it.
+/// docs/docs/06-worker.md ("Threading model") replaces it.
 async fn ticks(ctx: Ctx) {
     let mut interval = tokio::time::interval(TICK);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
