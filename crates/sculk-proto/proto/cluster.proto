@@ -1,0 +1,178 @@
+// IO <-> Worker control channel (docs/docs/05-io-server.md, 08-protokoly.md).
+syntax = "proto3";
+
+package sculk.cluster.v1;
+
+// A worker opens one Register stream to IO and keeps it for its whole life.
+// IO treats the end of the stream as the worker's death.
+service Io {
+  rpc Register(stream WorkerMessage) returns (stream IoMessage);
+  rpc AllocateEntityIds(AllocateEntityIdsRequest) returns (EntityIdBlock);
+  // From a worker's engine: it wanted a chunk another worker's engine holds (docs/docs/03-mikrosvity.md, "Злиття").
+  rpc ReportConflict(ConflictReport) returns (ConflictAck);
+}
+
+message ConflictReport {
+  // The engine that asked for the chunk.
+  uint32 worker_id = 1;
+  // The engine that holds it.
+  uint32 owner_worker_id = 2;
+  string dimension = 3;
+  int32 x = 4;
+  int32 z = 5;
+}
+
+message ConflictAck {
+  // The owner has no players near the chunk: it is letting the chunk go, and the engine should wait for it rather
+  // than give up on it. False: the micro worlds met, and IO moves players.
+  bool wait = 1;
+}
+
+message WorkerMessage {
+  oneof msg {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    SessionReady session_ready = 3;
+    PlayerPackets player_packets = 4;
+    PlayerPrepared player_prepared = 5;
+    EngineReply engine_reply = 6;
+    Draining draining = 7;
+    PlayerBatch player_batch = 8;
+  }
+}
+
+// The worker is about to stop: IO moves its engine's players to other engines and answers with Drained.
+message Draining {}
+
+// The engine's answer to EngineCommand: one JSON line, `{"ok": true, ...}` or `{"error": "..."}`.
+message EngineReply {
+  uint64 request_id = 1;
+  string reply = 2;
+  // Set when the engine could not be asked at all.
+  string error = 3;
+}
+
+// The worker's answer to PreparePlayer.
+message PlayerPrepared {
+  uint64 request_id = 1;
+  // Empty when the player's files are in place.
+  string error = 2;
+}
+
+// The first message on the stream.
+message Hello {
+  string version = 1;
+  // Where this worker's game engine (Horizon, `sculk-engine`) takes players; IO proxies them there with Velocity
+  // forwarding. Empty: the worker plays its built-in flat world over this stream (PlayerPackets).
+  string engine_addr = 2;
+}
+
+message Heartbeat {
+  uint32 mw_count = 1;
+  uint32 player_count = 2;
+  float mspt = 3;
+}
+
+// The worker's answer to AssignSession.
+message SessionReady {
+  uint64 session_id = 1;
+  // The micro world the player now lives in; 0 when `error` is set.
+  uint64 mw_id = 2;
+  // True when the player's zone overlapped a micro world on this worker and joined it.
+  bool joined_existing = 3;
+  string error = 4;
+  // Set with `error` when the zone belongs to a micro world on another worker: IO tries that worker instead.
+  uint32 redirect_worker_id = 5;
+}
+
+message IoMessage {
+  oneof msg {
+    Welcome welcome = 1;
+    AssignSession assign_session = 2;
+    CloseSession close_session = 3;
+    PlayerPackets player_packets = 4;
+    PreparePlayer prepare_player = 5;
+    EngineCommand engine_command = 6;
+    Drained drained = 7;
+    PlayerBatch player_batch = 8;
+  }
+}
+
+// Play packets of many players sent together (docs/docs/06-worker.md, "пакетна передача"): one message instead of
+// one per packet keeps the stream's framing small when many players play.
+message PlayerBatch {
+  repeated PlayerPackets packets = 1;
+}
+
+// The players of a draining worker went to other engines (or there was nowhere to take them).
+message Drained {
+  uint32 moved = 1;
+  uint32 left = 2;
+}
+
+// A request to the worker's engine on its control endpoint (Horizon's docs/server.md: server-status,
+// player-expect, player-export, player-import, player-release, player-drop...).
+message EngineCommand {
+  uint64 request_id = 1;
+  string line = 2;
+}
+
+// Before IO sends a player to a worker's engine: the worker puts the player's saved files (players/data, stats,
+// advancements) from AnvilDB where its engine reads them, so the player arrives as it left another worker.
+message PreparePlayer {
+  uint64 request_id = 1;
+  // 16 bytes, big-endian.
+  bytes uuid = 2;
+}
+
+// Play packets of one player (docs/docs/05-io-server.md, "Розподіл роботи з пакетами"). From IO to the worker: packet
+// bodies (VarInt ID + payload). From the worker to IO: frame contents, already compressed by the worker when the
+// connection compresses; IO only adds the length prefix (and, later, encrypts).
+message PlayerPackets {
+  uint64 session_id = 1;
+  repeated bytes packets = 2;
+}
+
+// IO's answer to Hello.
+message Welcome {
+  // 16-bit worker ID (fits in uint32 on the wire).
+  uint32 worker_id = 1;
+  uint32 heartbeat_interval_ms = 2;
+  EntityIdBlock entity_ids = 3;
+  // The Velocity forwarding secret the engine checks IO's logins with (its forwarding.secret).
+  string forwarding_secret = 4;
+}
+
+message Position {
+  string dimension = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+// A player who has logged in on IO and now lives on this worker.
+message AssignSession {
+  uint64 session_id = 1;
+  string username = 2;
+  // 16 bytes, big-endian.
+  bytes uuid = 3;
+  Position position = 4;
+  // What the client asked for in its settings; the worker caps it.
+  uint32 view_distance = 5;
+  // Packets of this size or more are compressed; -1: the connection doesn't compress.
+  int32 compression_threshold = 6;
+}
+
+message CloseSession {
+  uint64 session_id = 1;
+}
+
+message AllocateEntityIdsRequest {
+  uint32 worker_id = 1;
+}
+
+// Entity IDs [start, start + len), unique across the cluster (docs/docs/09-hlobalnyi-stan.md).
+message EntityIdBlock {
+  int32 start = 1;
+  uint32 len = 2;
+}

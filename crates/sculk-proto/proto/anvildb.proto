@@ -1,0 +1,222 @@
+// AnvilDB: chunk leases (docs/docs/07-anvildb.md).
+syntax = "proto3";
+
+package sculk.anvildb.v1;
+
+message ChunkPos {
+  string world = 1;
+  string dimension = 2;
+  int32 x = 3;
+  int32 z = 4;
+}
+
+// Who holds a lease: a micro world and the worker that ticks it.
+message LeaseHolder {
+  uint64 mw_id = 1;
+  uint32 worker_id = 2;
+}
+
+message Lease {
+  ChunkPos chunk = 1;
+  LeaseHolder holder = 2;
+  // Fencing token: grows with every new owner, so a write from an older owner is refused.
+  uint64 generation = 3;
+  uint64 expires_in_ms = 4;
+}
+
+// Takes every chunk or none of them.
+message AcquireRequest {
+  LeaseHolder holder = 1;
+  repeated ChunkPos chunks = 2;
+}
+
+message AcquireResponse {
+  oneof result {
+    Granted granted = 1;
+    Conflict conflict = 2;
+  }
+}
+
+message Granted {
+  repeated Lease leases = 1;
+}
+
+// The first chunk that another micro world already holds, and who holds it.
+message Conflict {
+  ChunkPos chunk = 1;
+  LeaseHolder owner = 2;
+}
+
+// Extends every lease the micro world holds.
+message RenewRequest {
+  LeaseHolder holder = 1;
+}
+
+message RenewResponse {
+  uint32 renewed = 1;
+}
+
+// An empty chunk list releases every lease of the micro world.
+message ReleaseRequest {
+  LeaseHolder holder = 1;
+  repeated ChunkPos chunks = 2;
+}
+
+message ReleaseResponse {
+  uint32 released = 1;
+}
+
+// Moves every lease of `from` to `to` in one step: merge, split, migration.
+message TransferRequest {
+  LeaseHolder from = 1;
+  LeaseHolder to = 2;
+}
+
+message TransferResponse {
+  repeated Lease leases = 1;
+}
+
+message OwnerRequest {
+  ChunkPos chunk = 1;
+}
+
+message OwnerResponse {
+  optional Lease lease = 1;
+}
+
+// Sent by IO when a worker dies.
+message ReleaseWorkerRequest {
+  uint32 worker_id = 1;
+}
+
+message ReleaseWorkerResponse {
+  uint32 released = 1;
+}
+
+service Leases {
+  rpc Acquire(AcquireRequest) returns (AcquireResponse);
+  rpc Renew(RenewRequest) returns (RenewResponse);
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+  rpc Transfer(TransferRequest) returns (TransferResponse);
+  rpc Owner(OwnerRequest) returns (OwnerResponse);
+  rpc ReleaseWorker(ReleaseWorkerRequest) returns (ReleaseWorkerResponse);
+  // Every live lease of a world, for the web console's map.
+  rpc List(ListLeasesRequest) returns (ListLeasesResponse);
+}
+
+message ListLeasesRequest {
+  string world = 1;
+}
+
+message ListLeasesResponse {
+  repeated Lease leases = 1;
+}
+
+// ---- Chunk storage (docs/docs/07-anvildb.md, "Формати зберігання") ----
+// Records are what a region file holds for a chunk once decompressed: a named NBT root. AnvilDB keeps them in
+// vanilla-compatible region files, so a world can be copied in and out as it is.
+
+message ChunkKey {
+  string world = 1;
+  // "minecraft:overworld", "minecraft:the_nether"...
+  string dimension = 2;
+  // "region" (terrain), "entities" or "poi".
+  string folder = 3;
+  int32 x = 4;
+  int32 z = 5;
+}
+
+message ReadChunkRequest {
+  ChunkKey key = 1;
+}
+
+message ReadChunkResponse {
+  // Absent when the chunk was never saved.
+  optional bytes nbt = 1;
+}
+
+message ChunkWrite {
+  ChunkKey key = 1;
+  // Absent deletes the chunk's record.
+  optional bytes nbt = 2;
+}
+
+// Accepted only when `worker_id` holds a live lease on every chunk written: a worker that lost a lease can't
+// overwrite the new owner's chunks.
+message WriteChunksRequest {
+  uint32 worker_id = 1;
+  repeated ChunkWrite writes = 2;
+}
+
+message WriteChunksResponse {}
+
+message SavedInRegionRequest {
+  string world = 1;
+  string dimension = 2;
+  string folder = 3;
+  int32 rx = 4;
+  int32 rz = 5;
+}
+
+message SavedInRegionResponse {
+  // 16 words: bit x + z * 32 is set when that chunk of the region has a record.
+  repeated fixed64 bits = 1;
+}
+
+service Chunks {
+  rpc Read(ReadChunkRequest) returns (ReadChunkResponse);
+  rpc Write(WriteChunksRequest) returns (WriteChunksResponse);
+  rpc SavedInRegion(SavedInRegionRequest) returns (SavedInRegionResponse);
+}
+
+// ---- World files (docs/docs/09-hlobalnyi-stan.md) ----
+// Everything of a world besides its chunks, in vanilla's layout under the world folder: level.dat, players/data,
+// players/stats, players/advancements and data/ (weather, game rules, world clocks, scoreboard, raids, maps...).
+// With the chunks beside them, AnvilDB's world folder is a vanilla world, to copy in and out as it is.
+
+message GetFileRequest {
+  string world = 1;
+  // Relative to the world folder, with `/`: "level.dat", "players/data/<uuid>.dat".
+  string path = 2;
+}
+
+message GetFileResponse {
+  // Absent when there is no such file.
+  optional bytes data = 1;
+}
+
+message WorldFile {
+  string path = 1;
+  bytes data = 2;
+}
+
+// Each file replaces the one at its path whole (the last writer wins).
+message PutFilesRequest {
+  string world = 1;
+  repeated WorldFile files = 2;
+  uint32 worker_id = 3;
+}
+
+message PutFilesResponse {}
+
+message ListFilesRequest {
+  string world = 1;
+  // Only paths starting with this; empty lists every file.
+  string prefix = 2;
+}
+
+message FileInfo {
+  string path = 1;
+  // The first 8 bytes of the content's SHA-1, big-endian: to tell whether a copy is up to date.
+  fixed64 hash = 2;
+}
+
+message ListFilesResponse {
+  repeated FileInfo files = 1;
+}
+
+service Files {
+  rpc Get(GetFileRequest) returns (GetFileResponse);
+  rpc Put(PutFilesRequest) returns (PutFilesResponse);
+  rpc List(ListFilesRequest) returns (ListFilesResponse);
+}
