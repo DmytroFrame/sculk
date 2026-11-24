@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/sculk-sensor.svg" width="180" alt="Калібрувальний скалк-сенсор — логотип Sculk">
+  <img src="https://minecraft.wiki/images/Calibrated_Sculk_Sensor_JE2.gif" width="160" alt="Калібрувальний скалк-сенсор — логотип Sculk">
 </p>
 
 <h1 align="center">Sculk</h1>
@@ -41,13 +41,37 @@
 | `sculk prepare` | Дані гри 26.3 з `server.jar` |
 | `sculk tunnel` | Nether Tunnel на боці гравця |
 
+## Швидкий старт: Docker Compose з 4 воркерами
+
+```sh
+git clone --recursive <цей репозиторій> sculk && cd sculk
+tools/horizon.sh setup          # Horizon (сабмодуль) з накладеними патчами Sculk
+cp .env.example .env
+```
+
+У `.env` поставте `SCULK_EULA=true` (ви приймаєте [EULA Minecraft](https://aka.ms/MinecraftEULA)),
+`HORIZON_RESOURCES="<шлях до підготовлених ресурсів 26.3 для Horizon>"` і `SCULK_WORKERS=4`. Кожен рушій може взяти
+до `SCULK_ENGINE_MEMORY` (6g); на меншій машині зменште. Далі:
+
+```sh
+tools/docker.sh up              # збирає образ, піднімає AnvilDB, IO і 4 воркери
+tools/docker.sh ps              # усі healthy?
+tools/docker.sh logs worker     # логи рушіїв
+```
+
+Підключайтесь до `<хост>:25565`; вебконсоль — `http://127.0.0.1:7180`. `tools/docker.sh up --workers 4` робить те саме
+без правки `.env`; `tools/docker.sh down` зупиняє кластер (світ лишається в томі `anvildb-data`).
+
+Для Kubernetes (з автомасштабуванням воркерів) — [deploy/kubernetes](deploy/kubernetes/README.uk.md).
+
 ## Запуск
 
 Потрібно:
 
 - Rust (stable) і `protoc`;
-- рушій Horizon поруч із кодом: `tools/horizon.sh setup` (клон Horizon на коміті з `patches/horizon/BASE` плюс патчі
-  Sculk);
+- рушій Horizon поруч із кодом: git-сабмодуль `external/horizon` (`git clone --recursive` або
+  `git submodule update --init`) на upstream-коміті з `patches/horizon/BASE`, і `tools/horizon.sh setup`, що накладає
+  патчі Sculk у гілці `sculk`;
 - підготовлені ресурси Minecraft 26.3 для Horizon (`horizon-prepare --prepare --server-jar ...`, або тека
   `.local/horizon-client/26.3` лаунчера Horizon). Їх готуєте ви зі своєї копії гри: нічого від Mojang Sculk не
   поширює;
@@ -94,7 +118,8 @@ tools/chaos.sh --workers 3 --bots 12      # chaos-тест під ботами H
 - Claude (Anthropic) — співавтор коду (Claude Code)
 
 Повний список — у [AUTHORS](AUTHORS). Sculk будується на [Horizon](https://github.com/horizon-rust/horizon) (MIT).
-Логотип — оригінальний піксель-арт, не текстура гри.
+Логотип — анімація калібрувального скалк-сенсора з [Minecraft Wiki](https://minecraft.wiki/w/Calibrated_Sculk_Sensor);
+текстури Minecraft належать Mojang.
 
 ## Ліцензія
 

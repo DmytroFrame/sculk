@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/sculk-sensor.svg" width="180" alt="A calibrated sculk sensor, Sculk's logo">
+  <img src="https://minecraft.wiki/images/Calibrated_Sculk_Sensor_JE2.gif" width="160" alt="A calibrated sculk sensor, Sculk's logo">
 </p>
 
 <h1 align="center">Sculk</h1>
@@ -44,13 +44,37 @@ One binary, `sculk`, several roles:
 | `sculk prepare` | Game data for 26.3 from `server.jar` |
 | `sculk tunnel` | Nether Tunnel, the player's side |
 
+## Quick start: Docker Compose with 4 workers
+
+```sh
+git clone --recursive <this repository> sculk && cd sculk
+tools/horizon.sh setup          # Horizon (the submodule) with Sculk's patches applied
+cp .env.example .env
+```
+
+In `.env` set `SCULK_EULA=true` (you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA)),
+`HORIZON_RESOURCES="<path to Horizon's prepared 26.3 resources>"` and `SCULK_WORKERS=4`. Each engine may take up to
+`SCULK_ENGINE_MEMORY` (6g); lower it for a smaller machine. Then:
+
+```sh
+tools/docker.sh up              # builds the image, starts AnvilDB, IO and 4 workers
+tools/docker.sh ps              # all healthy?
+tools/docker.sh logs worker     # the engines' logs
+```
+
+Connect to `<host>:25565`; the web console is at `http://127.0.0.1:7180`. `tools/docker.sh up --workers 4` does the
+same without editing `.env`; `tools/docker.sh down` stops the cluster (the world stays in the `anvildb-data` volume).
+
+For Kubernetes (autoscaling workers included) see [deploy/kubernetes](deploy/kubernetes/README.md).
+
 ## Running it
 
 You need:
 
 - Rust (stable) and `protoc`;
-- the Horizon engine beside the code: `tools/horizon.sh setup` (Horizon cloned at the commit in
-  `patches/horizon/BASE`, plus Sculk's patches);
+- the Horizon engine beside the code: the `external/horizon` git submodule (`git clone --recursive`, or
+  `git submodule update --init`) at upstream's commit in `patches/horizon/BASE`, and `tools/horizon.sh setup` to apply
+  Sculk's patches on a `sculk` branch;
 - Minecraft 26.3 resources prepared for Horizon (`horizon-prepare --prepare --server-jar ...`, or the Horizon
   launcher's `.local/horizon-client/26.3`). You prepare them from your own copy of the game: Sculk distributes nothing
   of Mojang's;
@@ -97,7 +121,8 @@ Changes to Horizon are commits on the `sculk` branch of `external/horizon`, expo
 - Claude (Anthropic) — co-author of the code (Claude Code)
 
 The full list is in [AUTHORS](AUTHORS). Sculk is built on [Horizon](https://github.com/horizon-rust/horizon) (MIT).
-The logo is original pixel art, not a game texture.
+The logo is the calibrated sculk sensor's animation from the [Minecraft Wiki](https://minecraft.wiki/w/Calibrated_Sculk_Sensor);
+Minecraft's textures belong to Mojang.
 
 ## License
 
