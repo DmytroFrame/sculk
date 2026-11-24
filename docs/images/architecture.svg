@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 580" width="760" height="580" role="img" aria-label="Один вхід, багато воркерів, одна база світів" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 580" width="760" height="580" role="img" aria-label="One entry, many workers, one world database" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13">
 <rect width="760" height="580" fill="#FFFFFF"/>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#B9B7AE"/></marker></defs>
-<text x="24" y="32" font-size="15" font-weight="600" fill="#1F1E1D" text-anchor="start">Один вхід, багато воркерів, одна база світів</text>
+<text x="24" y="32" font-size="15" font-weight="600" fill="#1F1E1D" text-anchor="start">One entry, many workers, one world database</text>
 <path d="M230 106V146" fill="none" stroke="#B9B7AE" stroke-width="1.25" marker-end="url(#arrow)"/>
 <path d="M530 106V146" fill="none" stroke="#B9B7AE" stroke-width="1.25" marker-end="url(#arrow)"/>
 <path d="M260 204V232H140V258" fill="none" stroke="#B9B7AE" stroke-width="1.25" marker-end="url(#arrow)"/>
@@ -15,12 +15,12 @@
 <path d="M248 310H272" fill="none" stroke="#B9B7AE" stroke-width="1.25" stroke-dasharray="4 3" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
 <path d="M488 310H512" fill="none" stroke="#B9B7AE" stroke-width="1.25" stroke-dasharray="4 3" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
 <rect x="120" y="62" width="220" height="44" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="230" y="88" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Клієнти Java Edition</text>
+<text x="230" y="88" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Java Edition clients</text>
 <rect x="420" y="62" width="220" height="44" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="530" y="88" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Nether Tunnel (опційно)</text>
+<text x="530" y="88" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Nether Tunnel (optional)</text>
 <rect x="210" y="148" width="340" height="56" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="380" y="171" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="middle">IO-сервер</text>
-<text x="380" y="191" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">з’єднання · автентифікація · маршрутизація</text>
+<text x="380" y="171" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="middle">IO server</text>
+<text x="380" y="191" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">connections · authentication · routing</text>
 <rect x="36" y="260" width="208" height="96" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
 <text x="52" y="280" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Worker 1</text>
 <rect x="52" y="292" width="80" height="36" rx="8" fill="#E4EEFB" stroke="#2E75D6" stroke-width="1.25"/>
@@ -39,16 +39,16 @@
 <text x="668" y="314" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">MW E</text>
 <rect x="230" y="420" width="300" height="56" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
 <text x="380" y="443" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="middle">AnvilDB</text>
-<text x="380" y="463" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">чанки · оренди · глобальний стан</text>
+<text x="380" y="463" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">chunks · leases · global state</text>
 <rect x="560" y="420" width="164" height="56" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="642" y="443" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="middle">Paper-сервер</text>
+<text x="642" y="443" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="middle">Paper server</text>
 <text x="642" y="463" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">+ AnvilDB Connector</text>
 <rect x="270" y="516" width="220" height="40" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="380" y="540" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Диск або S3-бакет</text>
+<text x="380" y="540" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="middle">Disk or S3 bucket</text>
 <text x="238" y="131" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">TCP</text>
 <text x="538" y="131" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">UDP</text>
-<text x="388" y="236" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">сесії гравців</text>
-<text x="260" y="376" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">передача MW</text>
-<text x="500" y="376" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">передача MW</text>
-<text x="388" y="394" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">черга команд</text>
+<text x="388" y="236" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">player sessions</text>
+<text x="260" y="376" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">MW handover</text>
+<text x="500" y="376" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="middle">MW handover</text>
+<text x="388" y="394" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">command queue</text>
 </svg>

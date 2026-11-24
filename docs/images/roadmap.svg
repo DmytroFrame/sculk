@@ -1,39 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 290" width="760" height="290" role="img" aria-label="Ядро спершу на beta 1.7.3, потім ваніль 26.x" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 290" width="760" height="290" role="img" aria-label="The core on beta 1.7.3 first, then vanilla 26.x" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13">
 <rect width="760" height="290" fill="#FFFFFF"/>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#B9B7AE"/></marker></defs>
-<text x="24" y="32" font-size="15" font-weight="600" fill="#1F1E1D" text-anchor="start">Ядро спершу на beta 1.7.3, потім ваніль 26.x</text>
+<text x="24" y="32" font-size="15" font-weight="600" fill="#1F1E1D" text-anchor="start">The core on beta 1.7.3 first, then vanilla 26.x</text>
 <line x1="24" y1="216" x2="734" y2="216" stroke="#B9B7AE" stroke-width="1.25" marker-end="url(#arrow)"/>
 <rect x="24" y="56" width="166" height="136" rx="8" fill="#E4EEFB" stroke="#2E75D6" stroke-width="2"/>
-<text x="40" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Етап 0</text>
-<text x="40" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Ядро на beta 1.7.3</text>
+<text x="40" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Stage 0</text>
+<text x="40" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Core on beta 1.7.3</text>
 <text x="40" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">IO, Worker, AnvilDB</text>
-<text x="40" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">оренди чанків</text>
-<text x="40" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">злиття і поділ MW</text>
+<text x="40" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">chunk leases</text>
+<text x="40" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">MW merge and split</text>
 <rect x="206" y="56" width="166" height="136" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="222" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Етап 1</text>
-<text x="222" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Ваніль 26.x</text>
-<text x="222" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">сучасний протокол</text>
-<text x="222" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">генерація за сідом</text>
-<text x="222" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">редстоун і моби 1:1</text>
+<text x="222" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Stage 1</text>
+<text x="222" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Vanilla 26.x</text>
+<text x="222" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">the modern protocol</text>
+<text x="222" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">generation by seed</text>
+<text x="222" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">redstone and mobs 1:1</text>
 <rect x="388" y="56" width="166" height="136" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="404" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Етап 2</text>
-<text x="404" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Надійність</text>
-<text x="404" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">відмови й drain</text>
-<text x="404" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">міграція й баланс</text>
-<text x="404" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">тест на 10k ботів</text>
+<text x="404" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Stage 2</text>
+<text x="404" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Reliability</text>
+<text x="404" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">failures and drain</text>
+<text x="404" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">migration and balance</text>
+<text x="404" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">a 10k bot test</text>
 <rect x="570" y="56" width="166" height="136" rx="8" fill="none" stroke="#B9B7AE" stroke-width="1.25"/>
-<text x="586" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Етап 3</text>
-<text x="586" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Екосистема</text>
+<text x="586" y="80" font-size="13" font-weight="600" fill="#1F1E1D" text-anchor="start">Stage 3</text>
+<text x="586" y="100" font-size="13" font-weight="400" fill="#1F1E1D" text-anchor="start">Ecosystem</text>
 <text x="586" y="128" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">AnvilDB Connector</text>
 <text x="586" y="146" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">Nether Tunnel</text>
-<text x="586" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">API розширень</text>
+<text x="586" y="164" font-size="11.5" font-weight="400" fill="#5E5D59" text-anchor="start">extension API</text>
 <polygon points="188,216 198,206 208,216 198,226" fill="#2E75D6" stroke="#2E75D6" stroke-width="1.25"/>
-<text x="198" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">злиття без розриву</text>
-<text x="198" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">з’єднання</text>
+<text x="198" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">merges without</text>
+<text x="198" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">disconnecting</text>
 <polygon points="370,216 380,206 390,216 380,226" fill="#2E75D6" stroke="#2E75D6" stroke-width="1.25"/>
-<text x="380" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">ферми й редстоун</text>
-<text x="380" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">як у ванілі</text>
+<text x="380" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">farms and redstone</text>
+<text x="380" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">as in vanilla</text>
 <polygon points="552,216 562,206 572,216 562,226" fill="#2E75D6" stroke="#2E75D6" stroke-width="1.25"/>
-<text x="562" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">10 000 гравців</text>
-<text x="562" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">в одному світі</text>
+<text x="562" y="248" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">10,000 players</text>
+<text x="562" y="264" font-size="11.5" font-weight="400" fill="#1F1E1D" text-anchor="middle">in one world</text>
 </svg>

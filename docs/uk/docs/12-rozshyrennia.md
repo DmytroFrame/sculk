@@ -1,5 +1,7 @@
 # 12. Розширення та AnvilDB Connector
 
+*[English](../../docs/12-rozshyrennia.md) · Українська*
+
 У Sculk буде власне API розширень, а Java-плагіни Paper всередині Sculk не запускатимуться. Натомість звичайні Paper-сервери зможуть підключатися до AnvilDB через окремий плагін.
 
 ## API Sculk

@@ -1,5 +1,7 @@
 # Sculk — концепція розподіленого Minecraft-сервера
 
+*[English](../README.md) · Українська*
+
 Архітектурна документація open source сервера Minecraft: Java Edition на Rust, розрахованого на 10 000+ гравців в одному світі.
 
 Версія документа: 7 листопада 2026.
@@ -22,4 +24,4 @@
 14. [Дорожня карта](docs/14-dorozhnia-karta.md)
 15. [Майбутні ідеї](docs/15-maibutni-idei.md)
 
-Увесь документ одним файлом: [SCULK.md](SCULK.md). Схеми лежать у теці [images](images/) у форматах PNG і SVG.
+Увесь документ одним файлом: [SCULK.md](SCULK.md). Схеми лежать у теці [images](../images/) у форматах PNG і SVG.
