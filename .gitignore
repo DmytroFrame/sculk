@@ -1,7 +1,18 @@
 /target
 /.vscode
-# Reference clones (Horizon, IWM); IWM holds Mojang's server.jar, which must never be committed.
+# Horizon checkout (tools/horizon.sh setup; our changes live in patches/horizon) and IWM; IWM holds Mojang's server.jar, which must never be committed.
 /external
 # Downloaded tools and Mojang files (JDK, server.jar, generated game data).
 /.local
 /game-data
+# AnvilDB's worlds from `sculk dev` / `sculk anvildb`.
+/anvildb-data
+# Local settings for compose.yaml and tools/docker.sh (.env.example is the template).
+/.env
+
+# The engines of `sculk dev` (SCULK_ENGINE): engine, engine-2...
+/engine
+/engine-*
+
+# macOS folder metadata.
+.DS_Store

@@ -1,0 +1,7 @@
+Sculk is written by:
+
+Dmytro Kostyshyn <dimakostishen@gmail.com>    author, the concept and the architecture (IWM, 2023)
+Claude (Anthropic) <noreply@anthropic.com>    co-author: AI pair programmer (Claude Code)
+
+Sculk is built on Horizon (https://github.com/horizon-rust/horizon, MIT), whose authors wrote the game engine
+it runs; Sculk's changes to Horizon are in patches/horizon.

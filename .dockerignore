@@ -1,0 +1,13 @@
+# Build outputs (Horizon's alone is ~17 GB).
+**/target
+# History and editor state.
+.git
+external/horizon/.git
+.vscode
+# Mojang's files and local runs: never in an image (IWM even holds a server.jar).
+external/iwm
+.local
+external/horizon/.local
+game-data
+anvildb-data
+engine
