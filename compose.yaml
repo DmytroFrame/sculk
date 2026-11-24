@@ -1,0 +1,190 @@
+# Sculk cluster for production: AnvilDB, IO and workers running the vanilla game (Horizon's engine)
+# (docs/docs/04-arkhitektura.md). Start it with tools/docker.sh, which builds the image first and checks the
+# settings; they come from .env (see .env.example).
+#
+#   tools/docker.sh up                 AnvilDB, IO and ${SCULK_WORKERS} engine workers
+#   tools/docker.sh up --workers 4     scale the workers (each one an engine; players spread over them)
+#   tools/docker.sh up --flat          the built-in flat test world instead of the game (development only)
+#
+# Only the game port is published (TCP, and UDP for Nether Tunnel); the web console is on this machine's
+# 127.0.0.1 only. Workers, AnvilDB and IO's control port stay on the cluster's own network.
+
+name: sculk
+
+x-sculk: &sculk
+  image: ${SCULK_IMAGE:-sculk}:${SCULK_TAG:-latest}
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 30s
+  logging:
+    driver: local
+    options:
+      max-size: 50m
+      max-file: "10"
+
+# Every role reads Minecraft's registries from the game data `prepare` writes.
+x-game-data: &game-data
+  type: volume
+  source: game-data
+  target: /data/game-data
+  read_only: true
+
+# server.properties (the engines' rules), server-icon.png, the seed lists (ops, whitelist, bans), datapacks/ and
+# horizon-mods/: the cluster's settings, the same for every worker.
+x-config: &config
+  type: bind
+  source: ${SCULK_CONFIG:-./config}
+  target: /config
+  read_only: true
+  bind:
+    create_host_path: true
+
+x-worker-env: &worker-env
+  RUST_LOG: ${RUST_LOG:-info}
+  SCULK_IO: http://io:7100
+  SCULK_ANVILDB: http://anvildb:7200
+  SCULK_WORLD: ${SCULK_WORLD:-world}
+  SCULK_VIEW_DISTANCE: ${SCULK_VIEW_DISTANCE:-10}
+  SCULK_SEED: ${SCULK_SEED:-sculk}
+
+services:
+  # One-shot: Minecraft 26.3's registries and tags out of Mojang's server.jar (downloaded, SHA-1 checked).
+  prepare:
+    <<: *sculk
+    restart: "no"
+    command: ["prepare", "--if-missing", "--out", "/data/game-data"]
+    volumes:
+      - type: volume
+        source: game-data
+        target: /data/game-data
+
+  # The world: chunks, players, world data and leases. Its volume is the world; back it up.
+  anvildb:
+    <<: *sculk
+    command: ["anvildb"]
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      SCULK_ANVILDB_LISTEN: 0.0.0.0:7200
+      SCULK_ANVILDB_DATA: /data/anvildb
+      SCULK_LEASE_TTL_MS: ${SCULK_LEASE_TTL_MS:-10000}
+      SCULK_REGION_COMPRESSION: ${SCULK_REGION_COMPRESSION:-lz4}
+      SCULK_ARCHIVE_AFTER_DAYS: ${SCULK_ARCHIVE_AFTER_DAYS:-30}
+      # Empty: cold regions are archived on the volume. Set all four to archive them to an S3 bucket.
+      SCULK_ARCHIVE_S3: ${SCULK_ARCHIVE_S3:-}
+      SCULK_S3_REGION: ${SCULK_S3_REGION:-us-east-1}
+      SCULK_S3_ACCESS_KEY: ${SCULK_S3_ACCESS_KEY:-}
+      SCULK_S3_SECRET_KEY: ${SCULK_S3_SECRET_KEY:-}
+    volumes:
+      - type: volume
+        source: anvildb-data
+        target: /data/anvildb
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7200"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: ${SCULK_ANVILDB_MEMORY:-2g}
+
+  # The players' entry point: login, online mode, moving players between engines.
+  io:
+    <<: *sculk
+    command: ["io"]
+    ports:
+      - "${SCULK_PORT:-25565}:25565"
+      # Nether Tunnel (`sculk tunnel --server host:port`): UDP on the same port.
+      - "${SCULK_PORT:-25565}:25565/udp"
+      # The web console (map of micro worlds, workers, MSPT): this machine only.
+      - "127.0.0.1:${SCULK_CONSOLE_PORT:-7180}:7180"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      SCULK_LISTEN: 0.0.0.0:25565
+      SCULK_IO_CONTROL_LISTEN: 0.0.0.0:7100
+      SCULK_CONSOLE_LISTEN: 0.0.0.0:7180
+      SCULK_TUNNEL_LISTEN: 0.0.0.0:25565
+      SCULK_ANVILDB: http://anvildb:7200
+      SCULK_WORLD: ${SCULK_WORLD:-world}
+      SCULK_MOTD: ${SCULK_MOTD:-A Minecraft Server}
+      SCULK_MAX_PLAYERS: ${SCULK_MAX_PLAYERS:-10000}
+      SCULK_COMPRESSION_THRESHOLD: ${SCULK_COMPRESSION_THRESHOLD:-256}
+      # As vanilla's online-mode=true; false only behind a proxy that checks players itself.
+      SCULK_ONLINE_MODE: ${SCULK_ONLINE_MODE:-true}
+      SCULK_ICON: /config/server-icon.png
+      SCULK_PLACEMENT: ${SCULK_PLACEMENT:-spread}
+      SCULK_VIEW_DISTANCE: ${SCULK_VIEW_DISTANCE:-10}
+      SCULK_SPLIT_GAP: ${SCULK_SPLIT_GAP:-8}
+      SCULK_SPLIT_AFTER_SECS: ${SCULK_SPLIT_AFTER_SECS:-300}
+      SCULK_SPLIT_OVERLOAD_MSPT: ${SCULK_SPLIT_OVERLOAD_MSPT:-45}
+    volumes:
+      - *game-data
+      - *config
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+      anvildb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7100"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: ${SCULK_IO_MEMORY:-2g}
+
+  # Workers running the vanilla game: each one is a Horizon engine (sculk-engine), a micro world of its own.
+  # Needs Horizon's prepared resources on the host (horizon-prepare, or the Horizon launcher's
+  # .local/horizon-client/26.3) and SCULK_EULA=true: the owner accepting Minecraft's EULA
+  # (https://aka.ms/MinecraftEULA). A stopping worker hands its players to the others first, then saves.
+  worker:
+    <<: *sculk
+    stop_grace_period: 120s
+    command: ["worker"]
+    environment:
+      <<: *worker-env
+      SCULK_ENGINE: /usr/local/bin/sculk-engine
+      SCULK_RESOURCES: /resources
+      SCULK_ENGINE_DIR: /data/engine
+      SCULK_ENGINE_BIND: 0.0.0.0
+      SCULK_ENGINE_PORT: "25601"
+      SCULK_EULA: ${SCULK_EULA:-false}
+      SCULK_PROPERTIES: /config/server.properties
+    volumes:
+      - *game-data
+      - *config
+      - type: bind
+        source: ${HORIZON_RESOURCES:-./external/horizon/.local/horizon-client/26.3}
+        target: /resources
+        read_only: true
+    deploy:
+      replicas: ${SCULK_WORKERS:-2}
+      resources:
+        limits:
+          memory: ${SCULK_ENGINE_MEMORY:-6g}
+    depends_on:
+      io:
+        condition: service_healthy
+
+  # The built-in flat test world (no game engine): development only (tools/docker.sh up --flat).
+  worker-flat:
+    <<: *sculk
+    profiles: ["flat"]
+    command: ["worker"]
+    environment:
+      <<: *worker-env
+    volumes:
+      - *game-data
+    deploy:
+      replicas: ${SCULK_WORKERS:-2}
+    depends_on:
+      io:
+        condition: service_healthy
+
+volumes:
+  game-data:
+  anvildb-data:
