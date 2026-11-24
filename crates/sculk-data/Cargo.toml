@@ -1,0 +1,18 @@
+[package]
+name = "sculk-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Minecraft 26.3 game data: `sculk prepare` and the synchronized registries and tags every role reads"
+
+[dependencies]
+anyhow.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+sha1.workspace = true
+tracing.workspace = true
+tempfile.workspace = true
+ureq.workspace = true
+zip.workspace = true
+
